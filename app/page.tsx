@@ -50,22 +50,6 @@ interface TimerDisplayProps {
   formatTime: (seconds: number) => string;
 }
 
-const TimerDisplay = React.memo(({ isLoading, elapsed, formatTime }: TimerDisplayProps) => {
-  if (!isLoading && elapsed === 0) return null;
-  
-  return (
-    <Box sx={{ mb: 2 }}>
-      <Alert severity="info">
-        {isLoading
-          ? `Crawl running: ${formatTime(elapsed)}`
-          : `Crawl completed in ${formatTime(elapsed)}`}
-      </Alert>
-    </Box>
-  );
-});
-
-TimerDisplay.displayName = 'TimerDisplay';
-
 export default function Home() {
   const [url, setUrl] = useState('');
   const [takeScreenshots, setTakeScreenshots] = useState(false);
@@ -74,9 +58,28 @@ export default function Home() {
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [showCompletion, setShowCompletion] = useState(false);
   const [isCrawlComplete, setIsCrawlComplete] = useState(false);
+  const [isCrawlCancelled, setIsCrawlCancelled] = useState(false);
   const [elapsed, setElapsed] = useState<number>(0);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const startTimeRef = useRef<number | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+
+  const TimerDisplay = React.memo(({ isLoading, elapsed, formatTime }: TimerDisplayProps) => {
+    if (!isLoading && elapsed === 0) return null;
+    
+    return (
+      <Box sx={{ mb: 2 }}>
+        <Alert severity="info">
+          {isLoading
+            ? `Crawl running: ${formatTime(elapsed)}`
+            : isCrawlCancelled ? `Crawl cancelled after ${formatTime(elapsed)}` : `Crawl completed in ${formatTime(elapsed)}`}
+        </Alert>
+      </Box>
+    );
+  });
+  
+  TimerDisplay.displayName = 'TimerDisplay';
 
   // Format seconds as HH:MM:SS
   const formatTime = (seconds: number) => {
@@ -115,6 +118,22 @@ export default function Home() {
     return Array.from(new Set(links));
   };
 
+  const handleCancel = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setIsLoading(false);
+    stopTimer();
+    if (startTimeRef.current) {
+      const finalElapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
+      setElapsed(finalElapsed);
+      startTimeRef.current = null;
+    }
+    setIsCrawlComplete(true);
+    setIsCrawlCancelled(true);
+  };
+
   const handleCrawl = async () => {
     if (!url) return;
 
@@ -122,7 +141,11 @@ export default function Home() {
     setScanResult(null);
     setShowCompletion(false);
     setIsCrawlComplete(false);
+    setIsCrawlCancelled(false);
     startTimer();
+
+    // Create new AbortController for this crawl
+    abortControllerRef.current = new AbortController();
 
     try {
       const response = await fetch('/api/crawl', {
@@ -135,6 +158,7 @@ export default function Home() {
           takeScreenshots,
           crawlEntireWebsite,
         }),
+        signal: abortControllerRef.current.signal,
       });
 
       const reader = response.body?.getReader();
@@ -186,10 +210,16 @@ export default function Home() {
         buffer = buffer.slice(startIndex);
       }
     } catch (error) {
-      console.error('Error crawling website:', error);
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.log('Crawl cancelled by user');
+      } else {
+        console.error('Error crawling website:', error);
+      }
       setIsLoading(false);
       stopTimer();
       startTimeRef.current = null;
+    } finally {
+      abortControllerRef.current = null;
     }
   };
 
@@ -235,14 +265,27 @@ export default function Home() {
               sx={{ mb: 2 }}
             />
 
-            <Button
-              variant="contained"
-              onClick={handleCrawl}
-              disabled={isLoading || !url}
-              fullWidth
-            >
-              {isLoading ? <CircularProgress size={24} /> : 'Crawl'}
-            </Button>
+            <Box sx={{ display: 'flex', gap: 2 }}>
+              <Button
+                variant="contained"
+                onClick={handleCrawl}
+                disabled={isLoading || !url}
+                fullWidth
+              >
+                {isLoading ? <CircularProgress size={24} /> : 'Crawl'}
+              </Button>
+              
+              {isLoading && (
+                <Button
+                  variant="outlined"
+                  color="error"
+                  onClick={handleCancel}
+                  fullWidth
+                >
+                  Cancel
+                </Button>
+              )}
+            </Box>
           </Box>
 
           <TimerDisplay 
