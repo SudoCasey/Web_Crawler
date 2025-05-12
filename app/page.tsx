@@ -1,0 +1,281 @@
+'use client';
+
+import React, { useState } from 'react';
+import {
+  Container,
+  TextField,
+  Button,
+  FormControlLabel,
+  Checkbox,
+  Paper,
+  Typography,
+  Box,
+  CircularProgress,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
+  Alert,
+  List,
+  ListItem,
+  ListItemText,
+  Divider,
+  Snackbar,
+} from '@mui/material';
+import { ThemeProvider, createTheme } from '@mui/material/styles';
+import CssBaseline from '@mui/material/CssBaseline';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+
+const theme = createTheme({
+  palette: {
+    mode: 'dark',
+  },
+});
+
+interface CrawlResult {
+  url: string;
+  screenshot?: string;
+  links: string[];
+  error?: string;
+}
+
+interface ScanResult {
+  results: CrawlResult[];
+  usedSitemap: boolean | null;
+  tookScreenshots: boolean;
+}
+
+export default function Home() {
+  const [url, setUrl] = useState('');
+  const [takeScreenshots, setTakeScreenshots] = useState(false);
+  const [crawlEntireWebsite, setCrawlEntireWebsite] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [scanResult, setScanResult] = useState<ScanResult | null>(null);
+  const [showCompletion, setShowCompletion] = useState(false);
+
+  const getUniqueLinks = (links: string[]): string[] => {
+    return Array.from(new Set(links));
+  };
+
+  const handleCrawl = async () => {
+    if (!url) return;
+
+    setIsLoading(true);
+    setScanResult(null);
+    setShowCompletion(false);
+
+    try {
+      const response = await fetch('/api/crawl', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          url,
+          takeScreenshots,
+          crawlEntireWebsite,
+        }),
+      });
+
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('No reader available');
+
+      let buffer = '';
+      
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        buffer += new TextDecoder().decode(value);
+        
+        // Process complete JSON objects from the buffer
+        let startIndex = 0;
+        let endIndex;
+        
+        while ((endIndex = buffer.indexOf('\n', startIndex)) !== -1) {
+          const jsonStr = buffer.slice(startIndex, endIndex);
+          try {
+            const data = JSON.parse(jsonStr);
+            setScanResult({
+              results: data.results.map((result: CrawlResult) => ({
+                ...result,
+                isCrawling: !data.isComplete
+              })),
+              usedSitemap: data.usedSitemap,
+              tookScreenshots: takeScreenshots
+            });
+            
+            if (data.isComplete) {
+              setShowCompletion(true);
+              setIsLoading(false);
+            }
+          } catch (e) {
+            console.error('Error parsing JSON:', e);
+          }
+          startIndex = endIndex + 1;
+        }
+        
+        // Keep the remaining partial data in the buffer
+        buffer = buffer.slice(startIndex);
+      }
+    } catch (error) {
+      console.error('Error crawling website:', error);
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
+      <Container maxWidth="md" sx={{ py: 4 }}>
+        <Paper elevation={3} sx={{ p: 4 }}>
+          <Typography variant="h4" component="h1" gutterBottom>
+            Web Crawler
+          </Typography>
+
+          <Box component="form" sx={{ mb: 4 }}>
+            <TextField
+              fullWidth
+              label="Website URL"
+              variant="outlined"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://example.com"
+              sx={{ mb: 2 }}
+            />
+
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={takeScreenshots}
+                  onChange={(e) => setTakeScreenshots(e.target.checked)}
+                />
+              }
+              label="Take screenshots"
+              sx={{ mb: 1 }}
+            />
+
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={crawlEntireWebsite}
+                  onChange={(e) => setCrawlEntireWebsite(e.target.checked)}
+                />
+              }
+              label="Crawl entire website"
+              sx={{ mb: 2 }}
+            />
+
+            <Button
+              variant="contained"
+              onClick={handleCrawl}
+              disabled={isLoading || !url}
+              fullWidth
+            >
+              {isLoading ? <CircularProgress size={24} /> : 'Crawl'}
+            </Button>
+          </Box>
+
+          {scanResult && (
+            <Box sx={{ mt: 2 }}>
+              {scanResult.results.length > 0 && (
+                <>
+                  {scanResult.usedSitemap !== null && scanResult.results.length > 1 && (
+                    <Alert severity="info" sx={{ mb: 2 }}>
+                      Pages were discovered using {scanResult.usedSitemap ? 'sitemap.xml' : 'recursive link discovery'}
+                    </Alert>
+                  )}
+                  {scanResult.tookScreenshots ? (
+                    <Accordion defaultExpanded>
+                      <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                          <Typography>Scanned Pages ({scanResult.results.length})</Typography>
+                          {isLoading && (
+                            <CircularProgress size={20} sx={{ ml: 2 }} />
+                          )}
+                        </Box>
+                      </AccordionSummary>
+                      <AccordionDetails>
+                        {scanResult.results.map((result, index) => (
+                          <Accordion key={index}>
+                            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                              <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                                <Typography sx={{ wordBreak: 'break-all' }}>{result.url}</Typography>
+                                {result.error && (
+                                  <Typography color="error" sx={{ ml: 2 }}>
+                                    (Error: {result.error})
+                                  </Typography>
+                                )}
+                              </Box>
+                            </AccordionSummary>
+                            <AccordionDetails>
+                              {result.screenshot && (
+                                <Box sx={{ mt: 2 }}>
+                                  <Typography variant="h6" gutterBottom>Screenshot:</Typography>
+                                  <img 
+                                    src={result.screenshot} 
+                                    alt={`Screenshot of ${result.url}`}
+                                    style={{ maxWidth: '100%', height: 'auto' }}
+                                  />
+                                </Box>
+                              )}
+                              {result.links.length > 0 && (
+                                <Box sx={{ mt: 2 }}>
+                                  <Typography variant="h6" gutterBottom>
+                                    New unique links found ({result.links.length}):
+                                  </Typography>
+                                  <List>
+                                    {result.links.map((link, linkIndex) => (
+                                      <ListItem key={linkIndex}>
+                                        <ListItemText 
+                                          primary={link}
+                                          sx={{ wordBreak: 'break-all' }}
+                                        />
+                                      </ListItem>
+                                    ))}
+                                  </List>
+                                </Box>
+                              )}
+                            </AccordionDetails>
+                          </Accordion>
+                        ))}
+                      </AccordionDetails>
+                    </Accordion>
+                  ) : (
+                    <List>
+                      {scanResult.results.map((result, index) => (
+                        <React.Fragment key={index}>
+                          <ListItem>
+                            <ListItemText 
+                              primary={
+                                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                  <Typography sx={{ wordBreak: 'break-all' }}>{result.url}</Typography>
+                                  {result.error && (
+                                    <Typography color="error" sx={{ ml: 2 }}>
+                                      (Error: {result.error})
+                                    </Typography>
+                                  )}
+                                </Box>
+                              }
+                            />
+                          </ListItem>
+                          {index < scanResult.results.length - 1 && <Divider />}
+                        </React.Fragment>
+                      ))}
+                    </List>
+                  )}
+                </>
+              )}
+            </Box>
+          )}
+
+          <Snackbar
+            open={showCompletion}
+            autoHideDuration={6000}
+            onClose={() => setShowCompletion(false)}
+            message="Website scan completed!"
+          />
+        </Paper>
+      </Container>
+    </ThemeProvider>
+  );
+} 
