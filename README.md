@@ -30,11 +30,6 @@ npm install
 yarn install
 ```
 
-3. Create a `public/screenshots` directory:
-```bash
-mkdir -p public/screenshots
-```
-
 ## Development
 
 Run the development server:
