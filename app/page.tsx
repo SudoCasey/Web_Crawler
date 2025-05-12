@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Container,
   TextField,
@@ -51,6 +51,43 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [showCompletion, setShowCompletion] = useState(false);
+  const [isCrawlComplete, setIsCrawlComplete] = useState(false);
+  const [elapsed, setElapsed] = useState<number>(0);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const startTimeRef = useRef<number | null>(null);
+
+  // Format seconds as HH:MM:SS
+  const formatTime = (seconds: number) => {
+    const h = Math.floor(seconds / 3600).toString().padStart(2, '0');
+    const m = Math.floor((seconds % 3600) / 60).toString().padStart(2, '0');
+    const s = (seconds % 60).toString().padStart(2, '0');
+    return `${h}:${m}:${s}`;
+  };
+
+  // Stop timer helper
+  const stopTimer = () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+
+  // Start timer helper
+  const startTimer = () => {
+    stopTimer(); // Ensure any existing timer is stopped first
+    startTimeRef.current = Date.now();
+    setElapsed(0);
+    timerRef.current = setInterval(() => {
+      if (startTimeRef.current) {
+        setElapsed(Math.floor((Date.now() - startTimeRef.current) / 1000));
+      }
+    }, 1000);
+  };
+
+  // Clean up timer on unmount
+  useEffect(() => {
+    return () => stopTimer();
+  }, []);
 
   const getUniqueLinks = (links: string[]): string[] => {
     return Array.from(new Set(links));
@@ -62,6 +99,8 @@ export default function Home() {
     setIsLoading(true);
     setScanResult(null);
     setShowCompletion(false);
+    setIsCrawlComplete(false);
+    startTimer();
 
     try {
       const response = await fetch('/api/crawl', {
@@ -105,7 +144,14 @@ export default function Home() {
             });
             
             if (data.isComplete) {
+              if (startTimeRef.current) {
+                const finalElapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
+                setElapsed(finalElapsed);
+                startTimeRef.current = null;
+              }
+              stopTimer();
               setShowCompletion(true);
+              setIsCrawlComplete(true);
               setIsLoading(false);
             }
           } catch (e) {
@@ -120,6 +166,8 @@ export default function Home() {
     } catch (error) {
       console.error('Error crawling website:', error);
       setIsLoading(false);
+      stopTimer();
+      startTimeRef.current = null;
     }
   };
 
@@ -174,6 +222,17 @@ export default function Home() {
               {isLoading ? <CircularProgress size={24} /> : 'Crawl'}
             </Button>
           </Box>
+
+          {/* Timer display above results */}
+          {(isLoading || isCrawlComplete) && (
+            <Box sx={{ mb: 2 }}>
+              <Alert severity="info">
+                {isLoading
+                  ? `Crawl running: ${formatTime(elapsed)}`
+                  : `Crawl completed in ${formatTime(elapsed)}`}
+              </Alert>
+            </Box>
+          )}
 
           {scanResult && (
             <Box sx={{ mt: 2 }}>
