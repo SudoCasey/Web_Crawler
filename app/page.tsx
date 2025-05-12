@@ -25,9 +25,105 @@ import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 
+// WCAG 2.2 Success Criterion mapping
+const WCAG_MAPPING: { [key: string]: { name: string; sc: string; level: 'A' | 'AA' | 'AAA'; url: string } } = {
+  'aria-allowed-attr': { name: 'Name, Role, Value', sc: '4.1.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html' },
+  'aria-allowed-role': { name: 'Name, Role, Value', sc: '4.1.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html' },
+  'aria-command-name': { name: 'Name, Role, Value', sc: '4.1.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html' },
+  'aria-hidden-body': { name: 'Name, Role, Value', sc: '4.1.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html' },
+  'aria-hidden-focus': { name: 'Name, Role, Value', sc: '4.1.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html' },
+  'aria-input-field-name': { name: 'Name, Role, Value', sc: '4.1.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html' },
+  'aria-meter-name': { name: 'Name, Role, Value', sc: '4.1.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html' },
+  'aria-progressbar-name': { name: 'Name, Role, Value', sc: '4.1.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html' },
+  'aria-required-attr': { name: 'Name, Role, Value', sc: '4.1.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html' },
+  'aria-required-children': { name: 'Name, Role, Value', sc: '4.1.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html' },
+  'aria-required-parent': { name: 'Name, Role, Value', sc: '4.1.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html' },
+  'aria-roledescription': { name: 'Name, Role, Value', sc: '4.1.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html' },
+  'aria-roles': { name: 'Name, Role, Value', sc: '4.1.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html' },
+  'aria-text': { name: 'Name, Role, Value', sc: '4.1.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html' },
+  'aria-toggle-field-name': { name: 'Name, Role, Value', sc: '4.1.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html' },
+  'aria-tooltip-name': { name: 'Name, Role, Value', sc: '4.1.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html' },
+  'aria-treeitem-name': { name: 'Name, Role, Value', sc: '4.1.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html' },
+  'aria-valid-attr': { name: 'Name, Role, Value', sc: '4.1.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html' },
+  'aria-valid-attr-value': { name: 'Name, Role, Value', sc: '4.1.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html' },
+  'button-name': { name: 'Name, Role, Value', sc: '4.1.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html' },
+  'bypass': { name: 'Bypass Blocks', sc: '2.4.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/bypass-blocks.html' },
+  'color-contrast': { name: 'Contrast (Minimum)', sc: '1.4.3', level: 'AA', url: 'https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html' },
+  'document-title': { name: 'Page Titled', sc: '2.4.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/page-titled.html' },
+  'duplicate-id': { name: 'Parsing', sc: '4.1.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/parsing.html' },
+  'duplicate-id-active': { name: 'Parsing', sc: '4.1.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/parsing.html' },
+  'duplicate-id-aria': { name: 'Parsing', sc: '4.1.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/parsing.html' },
+  'form-field-multiple-labels': { name: 'Labels or Instructions', sc: '3.3.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/labels-or-instructions.html' },
+  'frame-title': { name: 'Frame Title', sc: '2.4.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/frame-titled.html' },
+  'heading-order': { name: 'Info and Relationships', sc: '1.3.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/info-and-relationships.html' },
+  'html-has-lang': { name: 'Language of Page', sc: '3.1.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/language-of-page.html' },
+  'html-lang-valid': { name: 'Language of Page', sc: '3.1.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/language-of-page.html' },
+  'html-xml-lang-mismatch': { name: 'Language of Page', sc: '3.1.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/language-of-page.html' },
+  'image-alt': { name: 'Non-text Content', sc: '1.1.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/non-text-content.html' },
+  'input-button-name': { name: 'Name, Role, Value', sc: '4.1.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html' },
+  'input-image-alt': { name: 'Non-text Content', sc: '1.1.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/non-text-content.html' },
+  'label': { name: 'Labels or Instructions', sc: '3.3.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/labels-or-instructions.html' },
+  'landmark-banner-is-top-level': { name: 'Info and Relationships', sc: '1.3.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/info-and-relationships.html' },
+  'landmark-complementary-is-top-level': { name: 'Info and Relationships', sc: '1.3.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/info-and-relationships.html' },
+  'landmark-contentinfo-is-top-level': { name: 'Info and Relationships', sc: '1.3.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/info-and-relationships.html' },
+  'landmark-main-is-top-level': { name: 'Info and Relationships', sc: '1.3.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/info-and-relationships.html' },
+  'landmark-no-duplicate-banner': { name: 'Info and Relationships', sc: '1.3.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/info-and-relationships.html' },
+  'landmark-no-duplicate-contentinfo': { name: 'Info and Relationships', sc: '1.3.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/info-and-relationships.html' },
+  'landmark-no-duplicate-main': { name: 'Info and Relationships', sc: '1.3.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/info-and-relationships.html' },
+  'landmark-one-main': { name: 'Info and Relationships', sc: '1.3.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/info-and-relationships.html' },
+  'landmark-unique': { name: 'Info and Relationships', sc: '1.3.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/info-and-relationships.html' },
+  'link-name': { name: 'Link Purpose (In Context)', sc: '2.4.4', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/link-purpose-in-context.html' },
+  'list': { name: 'Info and Relationships', sc: '1.3.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/info-and-relationships.html' },
+  'listitem': { name: 'Info and Relationships', sc: '1.3.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/info-and-relationships.html' },
+  'marquee': { name: 'Pause, Stop, Hide', sc: '2.2.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/pause-stop-hide.html' },
+  'meta-refresh': { name: 'Timing Adjustable', sc: '2.2.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/timing-adjustable.html' },
+  'meta-viewport': { name: 'Reflow', sc: '1.4.10', level: 'AA', url: 'https://www.w3.org/WAI/WCAG22/Understanding/reflow.html' },
+  'nested-interactive': { name: 'Name, Role, Value', sc: '4.1.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html' },
+  'no-autoplay-audio': { name: 'Audio Control', sc: '1.4.2', level: 'A', url: 'https://www.w3.org/WAI/WAI/WCAG22/Understanding/audio-control.html' },
+  'object-alt': { name: 'Non-text Content', sc: '1.1.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/non-text-content.html' },
+  'p-as-heading': { name: 'Info and Relationships', sc: '1.3.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/info-and-relationships.html' },
+  'page-has-heading-one': { name: 'Info and Relationships', sc: '1.3.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/info-and-relationships.html' },
+  'presentation-role-conflict': { name: 'Name, Role, Value', sc: '4.1.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html' },
+  'role-img-alt': { name: 'Non-text Content', sc: '1.1.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/non-text-content.html' },
+  'scrollable-region-focusable': { name: 'Keyboard', sc: '2.1.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/keyboard.html' },
+  'select-name': { name: 'Name, Role, Value', sc: '4.1.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html' },
+  'server-side-image-map': { name: 'Keyboard', sc: '2.1.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/keyboard.html' },
+  'svg-img-alt': { name: 'Non-text Content', sc: '1.1.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/non-text-content.html' },
+  'td-headers-attr': { name: 'Info and Relationships', sc: '1.3.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/info-and-relationships.html' },
+  'th-has-data-cells': { name: 'Info and Relationships', sc: '1.3.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/info-and-relationships.html' },
+  'valid-lang': { name: 'Language of Parts', sc: '3.1.2', level: 'AA', url: 'https://www.w3.org/WAI/WCAG22/Understanding/language-of-parts.html' },
+  'video-caption': { name: 'Captions (Prerecorded)', sc: '1.2.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/captions-prerecorded.html' },
+};
+
 const theme = createTheme({
   palette: {
     mode: 'dark',
+  },
+  components: {
+    MuiAccordion: {
+      styleOverrides: {
+        root: {
+          '&.Mui-expanded': {
+            margin: '8px 0',
+            '&:before': {
+              opacity: 1,
+            },
+          },
+          '&:before': {
+            opacity: 1,
+          },
+        },
+      },
+    },
+    MuiAccordionSummary: {
+      styleOverrides: {
+        root: {
+          '&.Mui-expanded': {
+            minHeight: 48,
+          },
+        },
+      },
+    },
   },
 });
 
@@ -36,12 +132,44 @@ interface CrawlResult {
   screenshot?: string;
   links: string[];
   error?: string;
+  accessibilityResults?: {
+    violations: Array<{
+      id: string;
+      impact: string;
+      description: string;
+      help: string;
+      helpUrl: string;
+      tags: string[];
+      nodes: Array<{
+        html: string;
+        target: string[];
+        failureSummary: string;
+      }>;
+    }>;
+    passes: Array<{
+      id: string;
+      impact: string;
+      description: string;
+      help: string;
+      helpUrl: string;
+      tags: string[];
+    }>;
+    incomplete: Array<{
+      id: string;
+      impact: string;
+      description: string;
+      help: string;
+      helpUrl: string;
+      tags: string[];
+    }>;
+  };
 }
 
 interface ScanResult {
   results: CrawlResult[];
   usedSitemap: boolean | null;
   tookScreenshots: boolean;
+  checkedAccessibility: boolean;
 }
 
 interface TimerDisplayProps {
@@ -54,6 +182,11 @@ export default function Home() {
   const [url, setUrl] = useState('');
   const [takeScreenshots, setTakeScreenshots] = useState(false);
   const [crawlEntireWebsite, setCrawlEntireWebsite] = useState(false);
+  const [checkAccessibility, setCheckAccessibility] = useState(false);
+  const [showLinkDiscovery, setShowLinkDiscovery] = useState(false);
+  const [wcagLevelA, setWcagLevelA] = useState(true);
+  const [wcagLevelAA, setWcagLevelAA] = useState(true);
+  const [wcagLevelAAA, setWcagLevelAAA] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [showCompletion, setShowCompletion] = useState(false);
@@ -157,6 +290,12 @@ export default function Home() {
           url,
           takeScreenshots,
           crawlEntireWebsite,
+          checkAccessibility,
+          wcagLevels: {
+            A: wcagLevelA,
+            AA: wcagLevelAA,
+            AAA: wcagLevelAAA,
+          },
         }),
         signal: abortControllerRef.current.signal,
       });
@@ -191,7 +330,8 @@ export default function Home() {
                   isCrawling: !data.isComplete
                 })),
                 usedSitemap: data.usedSitemap,
-                tookScreenshots: takeScreenshots
+                tookScreenshots: takeScreenshots,
+                checkedAccessibility: data.checkedAccessibility
               });
               
               if (data.isComplete) {
@@ -253,7 +393,6 @@ export default function Home() {
               variant="outlined"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://example.com"
               sx={{ mb: 2 }}
             />
 
@@ -271,13 +410,67 @@ export default function Home() {
             <FormControlLabel
               control={
                 <Checkbox
+                  checked={showLinkDiscovery}
+                  onChange={(e) => setShowLinkDiscovery(e.target.checked)}
+                />
+              }
+              label="Show link discovery information"
+              sx={{ mb: 1 }}
+            />
+
+            <FormControlLabel
+              control={
+                <Checkbox
                   checked={crawlEntireWebsite}
                   onChange={(e) => setCrawlEntireWebsite(e.target.checked)}
                 />
               }
               label="Crawl entire website"
-              sx={{ mb: 2 }}
+              sx={{ mb: 1 }}
             />
+
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={checkAccessibility}
+                  onChange={(e) => setCheckAccessibility(e.target.checked)}
+                />
+              }
+              label="Check WCAG Accessibility"
+              sx={{ mb: 1 }}
+            />
+
+            {checkAccessibility && (
+              <Box sx={{ ml: 4, mb: 2 }}>
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={wcagLevelA}
+                      onChange={(e) => setWcagLevelA(e.target.checked)}
+                    />
+                  }
+                  label="Level A"
+                />
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={wcagLevelAA}
+                      onChange={(e) => setWcagLevelAA(e.target.checked)}
+                    />
+                  }
+                  label="Level AA"
+                />
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={wcagLevelAAA}
+                      onChange={(e) => setWcagLevelAAA(e.target.checked)}
+                    />
+                  }
+                  label="Level AAA"
+                />
+              </Box>
+            )}
 
             <Box sx={{ display: 'flex', gap: 2 }}>
               <Button
@@ -329,7 +522,15 @@ export default function Home() {
                       </AccordionSummary>
                       <AccordionDetails>
                         {scanResult.results.map((result, index) => (
-                          <Accordion key={index}>
+                          <Accordion 
+                            key={index}
+                            sx={{
+                              '&.Mui-expanded': {
+                                backgroundColor: 'rgba(25, 118, 210, 0.08)',
+                                borderLeft: '4px solid #1976d2',
+                              },
+                            }}
+                          >
                             <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                               <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
                                 <Typography sx={{ wordBreak: 'break-all' }}>{result.url}</Typography>
@@ -343,15 +544,229 @@ export default function Home() {
                             <AccordionDetails>
                               {result.screenshot && (
                                 <Box sx={{ mt: 2 }}>
-                                  <Typography variant="h6" gutterBottom>Screenshot:</Typography>
-                                  <img 
-                                    src={result.screenshot} 
-                                    alt={`Screenshot of ${result.url}`}
-                                    style={{ maxWidth: '100%', height: 'auto' }}
-                                  />
+                                  <Accordion defaultExpanded>
+                                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                                      <Typography variant="h6">Screenshot</Typography>
+                                    </AccordionSummary>
+                                    <AccordionDetails>
+                                      <img 
+                                        src={result.screenshot} 
+                                        alt={`Screenshot of ${result.url}`}
+                                        style={{ maxWidth: '100%', height: 'auto' }}
+                                      />
+                                    </AccordionDetails>
+                                  </Accordion>
                                 </Box>
                               )}
-                              {result.links.length > 0 && (
+                              {result.accessibilityResults && (
+                                <Box sx={{ mt: 2 }}>
+                                  <Typography variant="h6" gutterBottom>Accessibility Results:</Typography>
+                                  
+                                  {/* Violations Section */}
+                                  <Accordion 
+                                    defaultExpanded={false}
+                                    sx={{
+                                      '&.Mui-expanded': {
+                                        backgroundColor: 'rgba(211, 47, 47, 0.08)',
+                                        borderLeft: '4px solid #d32f2f',
+                                      },
+                                    }}
+                                  >
+                                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                                      <Typography variant="subtitle1" color="error">
+                                        Violations ({result.accessibilityResults.violations.length})
+                                      </Typography>
+                                    </AccordionSummary>
+                                    <AccordionDetails>
+                                      {result.accessibilityResults.violations.map((violation, vIndex) => (
+                                        <Accordion 
+                                          key={vIndex}
+                                          defaultExpanded={result.accessibilityResults?.violations.length === 1}
+                                          sx={{
+                                            '&.Mui-expanded': {
+                                              backgroundColor: 'rgba(211, 47, 47, 0.04)',
+                                              borderLeft: '2px solid #d32f2f',
+                                            },
+                                          }}
+                                        >
+                                          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                                            <Typography>
+                                              {WCAG_MAPPING[violation.id] ? 
+                                                `SC ${WCAG_MAPPING[violation.id].sc} ${WCAG_MAPPING[violation.id].name} - ${violation.impact} impact (${violation.nodes.length} ${violation.nodes.length === 1 ? 'instance' : 'instances'})` :
+                                                `${violation.id} - ${violation.impact} impact (${violation.nodes.length} ${violation.nodes.length === 1 ? 'instance' : 'instances'})`
+                                              }
+                                            </Typography>
+                                          </AccordionSummary>
+                                          <AccordionDetails>
+                                            <Typography variant="subtitle2" gutterBottom>
+                                              WCAG Success Criterion:
+                                            </Typography>
+                                            <Typography paragraph>
+                                              {violation.tags
+                                                .filter(tag => tag.startsWith('wcag2'))
+                                                .map(tag => {
+                                                  const level = tag.endsWith('a') ? 'A' : tag.endsWith('aa') ? 'AA' : 'AAA';
+                                                  const sc = tag.match(/\d+\.\d+\.\d+/)?.[0] || '';
+                                                  return `SC ${sc} Level ${level}`;
+                                                })
+                                                .join(', ')}
+                                            </Typography>
+                                            <Typography variant="subtitle2" gutterBottom>
+                                              Description:
+                                            </Typography>
+                                            <Typography paragraph>
+                                              {violation.description}
+                                            </Typography>
+                                            <Typography variant="subtitle2" gutterBottom>
+                                              Explanation:
+                                            </Typography>
+                                            <Typography paragraph>
+                                              {violation.help}
+                                            </Typography>
+                                            <Typography variant="subtitle2" gutterBottom>
+                                              Affected Elements:
+                                            </Typography>
+                                            {violation.nodes.map((node, nIndex) => (
+                                              <Box key={nIndex} sx={{ mb: 2 }}>
+                                                <Typography variant="body2" component="pre" sx={{ 
+                                                  backgroundColor: 'rgba(0, 0, 0, 0.1)',
+                                                  p: 1,
+                                                  borderRadius: 1,
+                                                  overflowX: 'auto',
+                                                  fontFamily: 'monospace',
+                                                  whiteSpace: 'pre-wrap',
+                                                  wordBreak: 'break-word'
+                                                }}>
+                                                  {node.html}
+                                                </Typography>
+                                                <Typography variant="body2" color="error" sx={{ mt: 1 }}>
+                                                  {node.failureSummary}
+                                                </Typography>
+                                              </Box>
+                                            ))}
+                                            <Typography variant="body2">
+                                              <a 
+                                                href={WCAG_MAPPING[violation.id]?.url || `https://www.w3.org/WAI/WCAG22/quickref/?versions=2.2&levels=${violation.tags.find(tag => tag.startsWith('wcag2'))?.toLowerCase() || 'aaa'}&technologies=${violation.id}`}
+                                                target="_blank" 
+                                                rel="noopener noreferrer"
+                                                style={{
+                                                  color: '#90caf9',
+                                                  textDecoration: 'none'
+                                                }}
+                                                onMouseOver={(e) => {
+                                                  e.currentTarget.style.color = '#42a5f5';
+                                                  e.currentTarget.style.textDecoration = 'underline';
+                                                }}
+                                                onMouseOut={(e) => {
+                                                  e.currentTarget.style.color = '#90caf9';
+                                                  e.currentTarget.style.textDecoration = 'none';
+                                                }}
+                                                onFocus={(e) => {
+                                                  e.currentTarget.style.color = '#42a5f5';
+                                                  e.currentTarget.style.textDecoration = 'underline';
+                                                }}
+                                                onBlur={(e) => {
+                                                  e.currentTarget.style.color = '#90caf9';
+                                                  e.currentTarget.style.textDecoration = 'none';
+                                                }}
+                                              >
+                                                View WCAG 2.2 Rule
+                                              </a>
+                                            </Typography>
+                                          </AccordionDetails>
+                                        </Accordion>
+                                      ))}
+                                    </AccordionDetails>
+                                  </Accordion>
+
+                                  {/* Passes Section */}
+                                  <Accordion 
+                                    defaultExpanded={false}
+                                    sx={{
+                                      '&.Mui-expanded': {
+                                        backgroundColor: 'rgba(46, 125, 50, 0.08)',
+                                        borderLeft: '4px solid #2e7d32',
+                                      },
+                                    }}
+                                  >
+                                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                                      <Typography variant="subtitle1" color="success.main">
+                                        Passes ({result.accessibilityResults.passes.length})
+                                      </Typography>
+                                    </AccordionSummary>
+                                    <AccordionDetails>
+                                      <List>
+                                        {result.accessibilityResults.passes.map((pass, pIndex) => (
+                                          <ListItem key={pIndex}>
+                                            <ListItemText
+                                              primary={
+                                                <Box>
+                                                  <Typography>{WCAG_MAPPING[pass.id]?.name || pass.id}</Typography>
+                                                  <Typography variant="body2" color="text.secondary">
+                                                    {pass.tags
+                                                      .filter(tag => tag.startsWith('wcag2'))
+                                                      .map(tag => {
+                                                        const level = tag.endsWith('a') ? 'A' : tag.endsWith('aa') ? 'AA' : 'AAA';
+                                                        const sc = tag.match(/\d+\.\d+\.\d+/)?.[0] || '';
+                                                        return `WCAG ${sc} (Level ${level})`;
+                                                      })
+                                                      .join(', ')}
+                                                  </Typography>
+                                                </Box>
+                                              }
+                                              secondary={pass.description}
+                                            />
+                                          </ListItem>
+                                        ))}
+                                      </List>
+                                    </AccordionDetails>
+                                  </Accordion>
+
+                                  {/* Incomplete Section */}
+                                  <Accordion 
+                                    defaultExpanded={false}
+                                    sx={{
+                                      '&.Mui-expanded': {
+                                        backgroundColor: 'rgba(237, 108, 2, 0.08)',
+                                        borderLeft: '4px solid #ed6c02',
+                                      },
+                                    }}
+                                  >
+                                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                                      <Typography variant="subtitle1" color="warning.main">
+                                        Incomplete Tests ({result.accessibilityResults.incomplete.length})
+                                      </Typography>
+                                    </AccordionSummary>
+                                    <AccordionDetails>
+                                      <List>
+                                        {result.accessibilityResults.incomplete.map((incomplete, iIndex) => (
+                                          <ListItem key={iIndex}>
+                                            <ListItemText
+                                              primary={
+                                                <Box>
+                                                  <Typography>{WCAG_MAPPING[incomplete.id]?.name || incomplete.id}</Typography>
+                                                  <Typography variant="body2" color="text.secondary">
+                                                    {incomplete.tags
+                                                      .filter(tag => tag.startsWith('wcag2'))
+                                                      .map(tag => {
+                                                        const level = tag.endsWith('a') ? 'A' : tag.endsWith('aa') ? 'AA' : 'AAA';
+                                                        const sc = tag.match(/\d+\.\d+\.\d+/)?.[0] || '';
+                                                        return `WCAG ${sc} (Level ${level})`;
+                                                      })
+                                                      .join(', ')}
+                                                  </Typography>
+                                                </Box>
+                                              }
+                                              secondary={incomplete.description}
+                                            />
+                                          </ListItem>
+                                        ))}
+                                      </List>
+                                    </AccordionDetails>
+                                  </Accordion>
+                                </Box>
+                              )}
+                              {showLinkDiscovery && result.links.length > 0 && (
                                 <Box sx={{ mt: 2 }}>
                                   <Typography variant="h6" gutterBottom>
                                     New unique links found ({result.links.length}):

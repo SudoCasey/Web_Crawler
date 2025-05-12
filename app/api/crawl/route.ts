@@ -9,6 +9,12 @@ interface CrawlRequest {
   url: string;
   takeScreenshots: boolean;
   crawlEntireWebsite: boolean;
+  checkAccessibility: boolean;
+  wcagLevels: {
+    A: boolean;
+    AA: boolean;
+    AAA: boolean;
+  };
 }
 
 interface CrawlResult {
@@ -16,12 +22,44 @@ interface CrawlResult {
   screenshot?: string;
   links: string[];
   error?: string;
+  accessibilityResults?: {
+    violations: Array<{
+      id: string;
+      impact: string;
+      description: string;
+      help: string;
+      helpUrl: string;
+      tags: string[];
+      nodes: Array<{
+        html: string;
+        target: string[];
+        failureSummary: string;
+      }>;
+    }>;
+    passes: Array<{
+      id: string;
+      impact: string;
+      description: string;
+      help: string;
+      helpUrl: string;
+      tags: string[];
+    }>;
+    incomplete: Array<{
+      id: string;
+      impact: string;
+      description: string;
+      help: string;
+      helpUrl: string;
+      tags: string[];
+    }>;
+  };
 }
 
 interface CrawlResponse {
   results: CrawlResult[];
   usedSitemap: boolean | null;
   isComplete: boolean;
+  checkedAccessibility: boolean;
 }
 
 // Add browser pool management
@@ -104,12 +142,113 @@ function generateSafeFilename(url: string): string {
   return `${Date.now()}-${hash}`;
 }
 
+async function runAccessibilityCheck(page: Page, wcagLevels: { A: boolean; AA: boolean; AAA: boolean }): Promise<CrawlResult['accessibilityResults']> {
+  try {
+    // First, check if axe is already injected
+    const axeExists = await page.evaluate(() => {
+      return typeof (window as any).axe !== 'undefined';
+    });
+
+    if (!axeExists) {
+      // Inject axe-core
+      await page.addScriptTag({
+        url: 'https://cdnjs.cloudflare.com/ajax/libs/axe-core/4.8.2/axe.min.js'
+      });
+
+      // Wait for axe to be available
+      await page.waitForFunction(() => {
+        return typeof (window as any).axe !== 'undefined';
+      }, { timeout: 5000 });
+    }
+
+    // Run axe-core analysis
+    const results = await page.evaluate((levels) => {
+      return new Promise<CrawlResult['accessibilityResults']>((resolve) => {
+        try {
+          const axe = (window as any).axe;
+          if (!axe) {
+            resolve({
+              violations: [],
+              passes: [],
+              incomplete: []
+            });
+            return;
+          }
+
+          // Configure axe options using WCAG tags
+          const options = {
+            runOnly: {
+              type: 'tag',
+              values: [
+                ...(levels.A ? ['wcag2a'] : []),
+                ...(levels.AA ? ['wcag2aa'] : []),
+                ...(levels.AAA ? ['wcag2aaa'] : [])
+              ]
+            },
+            resultTypes: ['violations', 'passes', 'incomplete'],
+            selectors: true,
+            ancestry: true,
+            xpath: true,
+            frameWaitTime: 1000,
+            iframes: true,
+            performanceTimer: true,
+            pingWaitTime: 500
+          };
+
+          // Run the analysis
+          axe.run(document, options)
+            .then((results: any) => {
+              resolve({
+                violations: results.violations || [],
+                passes: results.passes || [],
+                incomplete: results.incomplete || []
+              });
+            })
+            .catch((error: unknown) => {
+              console.error('AXE analysis error:', error instanceof Error ? error.message : error);
+              resolve({
+                violations: [],
+                passes: [],
+                incomplete: []
+              });
+            });
+        } catch (error) {
+          console.error('Error in page context:', error.message || error);
+          resolve({
+            violations: [],
+            passes: [],
+            incomplete: []
+          });
+        }
+      });
+    }, wcagLevels);
+
+    // Ensure we have a valid result object
+    const validResults: CrawlResult['accessibilityResults'] = {
+      violations: results?.violations || [],
+      passes: results?.passes || [],
+      incomplete: results?.incomplete || []
+    };
+
+    return validResults;
+  } catch (error) {
+    console.error('Error running accessibility check:', error);
+    return {
+      violations: [],
+      passes: [],
+      incomplete: []
+    };
+  }
+}
+
 async function crawlPage(
   url: string,
   takeScreenshots: boolean,
   visited: Set<string>,
   baseUrl: string,
-  collectLinks: boolean
+  collectLinks: boolean,
+  checkAccessibility: boolean,
+  wcagLevels: { A: boolean; AA: boolean; AAA: boolean }
 ): Promise<CrawlResult> {
   if (visited.has(url)) {
     return { url, links: [] };
@@ -143,18 +282,6 @@ async function crawlPage(
     // Handle JavaScript dialogs
     page.on('dialog', async (dialog: Dialog) => {
       await dialog.dismiss();
-    });
-
-    // Track redirects
-    const redirectChain: string[] = [];
-    page.on('response', (response: HTTPResponse) => {
-      const status = response.status();
-      if (status >= 300 && status < 400) {
-        const location = response.headers()['location'];
-        if (location) {
-          redirectChain.push(location);
-        }
-      }
     });
 
     // Set a longer timeout and wait until network is idle
@@ -200,52 +327,14 @@ async function crawlPage(
       }
     }
 
-    // Check for redirect loops
-    if (redirectChain.length > 10) {
-      await page.close();
-      return {
-        url,
-        links: [],
-        error: 'Too many redirects detected'
-      };
-    }
+    // Wait for the page to be fully loaded
+    await page.waitForFunction(() => {
+      return document.readyState === 'complete';
+    }, { timeout: 5000 });
 
-    // Check for redirect loops by comparing final URL with original
-    const finalUrl = page.url();
-    if (finalUrl !== url && visited.has(finalUrl)) {
-      await page.close();
-      return {
-        url,
-        links: [],
-        error: 'Redirect loop detected'
-      };
-    }
+    // Wait for any dynamic content to load
+    await page.waitForTimeout(2000);
 
-    // Handle meta refresh redirects
-    const metaRefresh = await page.evaluate(() => {
-      const meta = document.querySelector('meta[http-equiv="refresh"]');
-      if (meta) {
-        const content = meta.getAttribute('content');
-        if (content) {
-          const match = content.match(/^\d+;\s*url=(.+)$/i);
-          return match ? match[1] : null;
-        }
-      }
-      return null;
-    });
-
-    if (metaRefresh) {
-      const absoluteMetaRefresh = new URL(metaRefresh, url).toString();
-      if (visited.has(absoluteMetaRefresh)) {
-        await page.close();
-        return {
-          url,
-          links: [],
-          error: 'Meta refresh redirect loop detected'
-        };
-      }
-    }
-    
     let screenshotPath: string | undefined;
     if (takeScreenshots) {
       const screenshotDir = path.join(process.cwd(), 'public', 'screenshots');
@@ -289,6 +378,17 @@ async function crawlPage(
       
       links = Array.from(newLinks);
     }
+
+    let accessibilityResults: CrawlResult['accessibilityResults'] | undefined;
+    if (checkAccessibility) {
+      // Ensure the page is fully loaded and stable before running accessibility checks
+      await page.waitForFunction(() => {
+        return document.readyState === 'complete';
+      }, { timeout: 5000 });
+
+      // Run the accessibility check
+      accessibilityResults = await runAccessibilityCheck(page, wcagLevels);
+    }
     
     // After successful crawl, close the page but keep the browser
     await page.close();
@@ -296,6 +396,7 @@ async function crawlPage(
       url,
       screenshot: screenshotPath,
       links,
+      accessibilityResults,
     };
   } catch (error) {
     console.error(`Error crawling ${url}:`, error);
@@ -344,7 +445,6 @@ export async function POST(request: Request) {
     try {
       await writer.write(encoder.encode(JSON.stringify(data) + '\n'));
     } catch (error) {
-      console.log('Client disconnected, stopping crawl');
       isClientConnected = false;
       return;
     }
@@ -355,13 +455,13 @@ export async function POST(request: Request) {
     try {
       await writer.close();
     } catch (error) {
-      console.log('Error closing writer:', error);
+      console.error('Error closing writer:', error);
     }
   };
 
   (async () => {
     try {
-      const { url, takeScreenshots, crawlEntireWebsite }: CrawlRequest = await request.json();
+      const { url, takeScreenshots, crawlEntireWebsite, checkAccessibility, wcagLevels }: CrawlRequest = await request.json();
       
       if (!url) {
         await writeResponse({ error: 'URL is required' });
@@ -393,7 +493,7 @@ export async function POST(request: Request) {
             const batch = urlsToCrawl.slice(i, i + concurrencyLimit);
             const batchResults = await Promise.all(
               batch.map(urlToCrawl => 
-                !visited.has(urlToCrawl) ? crawlPage(urlToCrawl, takeScreenshots, visited, baseUrl, true) : null
+                !visited.has(urlToCrawl) ? crawlPage(urlToCrawl, takeScreenshots, visited, baseUrl, true, checkAccessibility, wcagLevels) : null
               )
             );
             
@@ -403,7 +503,8 @@ export async function POST(request: Request) {
             await writeResponse({
               results,
               usedSitemap,
-              isComplete: false
+              isComplete: false,
+              checkedAccessibility: checkAccessibility
             });
             
             if (!usedSitemap) {
@@ -423,26 +524,28 @@ export async function POST(request: Request) {
               for (const link of Array.from(newLinks)) {
                 if (!isClientConnected) break;
                 await delay(1000);
-                const subResult = await crawlPage(link, takeScreenshots, visited, baseUrl, true);
+                const subResult = await crawlPage(link, takeScreenshots, visited, baseUrl, true, checkAccessibility, wcagLevels);
                 results.push(subResult);
                 
                 await writeResponse({
                   results,
                   usedSitemap,
-                  isComplete: false
+                  isComplete: false,
+                  checkedAccessibility: checkAccessibility
                 });
               }
             }
           }
         } else {
           // Single page crawl
-          const result = await crawlPage(url, takeScreenshots, visited, baseUrl, false);
+          const result = await crawlPage(url, takeScreenshots, visited, baseUrl, false, checkAccessibility, wcagLevels);
           results.push(result);
           
           await writeResponse({
             results,
             usedSitemap,
-            isComplete: false
+            isComplete: false,
+            checkedAccessibility: checkAccessibility
           });
         }
         
@@ -451,12 +554,13 @@ export async function POST(request: Request) {
           await writeResponse({
             results,
             usedSitemap,
-            isComplete: true
+            isComplete: true,
+            checkedAccessibility: checkAccessibility
           });
         }
       } catch (error) {
         if (error instanceof Error && error.name === 'AbortError') {
-          console.log('Crawl cancelled by client');
+          // Crawl cancelled by client
         } else {
           console.error('Error during crawl:', error);
           await writeResponse({
@@ -475,7 +579,7 @@ export async function POST(request: Request) {
           error: 'Internal server error'
         });
       } catch (e) {
-        console.log('Client disconnected, stopping crawl');
+        // Client disconnected
       } finally {
         // Ensure browsers are closed even on error
         await closeAllBrowsers();
