@@ -118,7 +118,7 @@ export default function Home() {
     return Array.from(new Set(links));
   };
 
-  const handleCancel = () => {
+  const handleCancel = async () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
@@ -161,53 +161,67 @@ export default function Home() {
         signal: abortControllerRef.current.signal,
       });
 
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
       const reader = response.body?.getReader();
       if (!reader) throw new Error('No reader available');
 
       let buffer = '';
       
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        
-        buffer += new TextDecoder().decode(value);
-        
-        // Process complete JSON objects from the buffer
-        let startIndex = 0;
-        let endIndex;
-        
-        while ((endIndex = buffer.indexOf('\n', startIndex)) !== -1) {
-          const jsonStr = buffer.slice(startIndex, endIndex);
-          try {
-            const data = JSON.parse(jsonStr);
-            setScanResult({
-              results: data.results.map((result: CrawlResult) => ({
-                ...result,
-                isCrawling: !data.isComplete
-              })),
-              usedSitemap: data.usedSitemap,
-              tookScreenshots: takeScreenshots
-            });
-            
-            if (data.isComplete) {
-              if (startTimeRef.current) {
-                const finalElapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
-                setElapsed(finalElapsed);
-                startTimeRef.current = null;
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          
+          buffer += new TextDecoder().decode(value);
+          
+          // Process complete JSON objects from the buffer
+          let startIndex = 0;
+          let endIndex;
+          
+          while ((endIndex = buffer.indexOf('\n', startIndex)) !== -1) {
+            const jsonStr = buffer.slice(startIndex, endIndex);
+            try {
+              const data = JSON.parse(jsonStr);
+              setScanResult({
+                results: data.results.map((result: CrawlResult) => ({
+                  ...result,
+                  isCrawling: !data.isComplete
+                })),
+                usedSitemap: data.usedSitemap,
+                tookScreenshots: takeScreenshots
+              });
+              
+              if (data.isComplete) {
+                if (startTimeRef.current) {
+                  const finalElapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
+                  setElapsed(finalElapsed);
+                  startTimeRef.current = null;
+                }
+                stopTimer();
+                setShowCompletion(true);
+                setIsCrawlComplete(true);
+                setIsLoading(false);
               }
-              stopTimer();
-              setShowCompletion(true);
-              setIsCrawlComplete(true);
-              setIsLoading(false);
+            } catch (e) {
+              console.error('Error parsing JSON:', e);
             }
-          } catch (e) {
-            console.error('Error parsing JSON:', e);
+            startIndex = endIndex + 1;
           }
-          startIndex = endIndex + 1;
+          
+          // Keep the remaining partial data in the buffer
+          buffer = buffer.slice(startIndex);
         }
-        
-        // Keep the remaining partial data in the buffer
-        buffer = buffer.slice(startIndex);
+      } catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') {
+          console.log('Crawl cancelled by user');
+        } else {
+          throw error;
+        }
+      } finally {
+        reader.releaseLock();
       }
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
@@ -215,10 +229,10 @@ export default function Home() {
       } else {
         console.error('Error crawling website:', error);
       }
+    } finally {
       setIsLoading(false);
       stopTimer();
       startTimeRef.current = null;
-    } finally {
       abortControllerRef.current = null;
     }
   };

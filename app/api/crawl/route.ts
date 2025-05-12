@@ -337,9 +337,26 @@ export async function POST(request: Request) {
   const encoder = new TextEncoder();
   const stream = new TransformStream();
   const writer = stream.writable.getWriter();
+  let isClientConnected = true;
 
   const writeResponse = async (data: any) => {
-    await writer.write(encoder.encode(JSON.stringify(data) + '\n'));
+    if (!isClientConnected) return;
+    try {
+      await writer.write(encoder.encode(JSON.stringify(data) + '\n'));
+    } catch (error) {
+      console.log('Client disconnected, stopping crawl');
+      isClientConnected = false;
+      return;
+    }
+  };
+
+  const closeWriter = async () => {
+    if (!isClientConnected) return;
+    try {
+      await writer.close();
+    } catch (error) {
+      console.log('Error closing writer:', error);
+    }
   };
 
   (async () => {
@@ -348,7 +365,7 @@ export async function POST(request: Request) {
       
       if (!url) {
         await writeResponse({ error: 'URL is required' });
-        await writer.close();
+        await closeWriter();
         return;
       }
 
@@ -371,6 +388,8 @@ export async function POST(request: Request) {
           // Process URLs in parallel with a concurrency limit
           const concurrencyLimit = 3;
           for (let i = 0; i < urlsToCrawl.length; i += concurrencyLimit) {
+            if (!isClientConnected) break;
+            
             const batch = urlsToCrawl.slice(i, i + concurrencyLimit);
             const batchResults = await Promise.all(
               batch.map(urlToCrawl => 
@@ -402,6 +421,7 @@ export async function POST(request: Request) {
               
               // Process new links with delay
               for (const link of Array.from(newLinks)) {
+                if (!isClientConnected) break;
                 await delay(1000);
                 const subResult = await crawlPage(link, takeScreenshots, visited, baseUrl, true);
                 results.push(subResult);
@@ -426,26 +446,41 @@ export async function POST(request: Request) {
           });
         }
         
-        // Send final results
-        await writeResponse({
-          results,
-          usedSitemap,
-          isComplete: true
-        });
+        if (isClientConnected) {
+          // Send final results
+          await writeResponse({
+            results,
+            usedSitemap,
+            isComplete: true
+          });
+        }
+      } catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') {
+          console.log('Crawl cancelled by client');
+        } else {
+          console.error('Error during crawl:', error);
+          await writeResponse({
+            error: 'Internal server error during crawl'
+          });
+        }
       } finally {
         // Clean up browser instances
         await closeAllBrowsers();
+        await closeWriter();
       }
-      
-      await writer.close();
     } catch (error) {
       console.error('Error in crawl API:', error);
-      await writeResponse({
-        error: 'Internal server error'
-      });
-      await writer.close();
-      // Ensure browsers are closed even on error
-      await closeAllBrowsers();
+      try {
+        await writeResponse({
+          error: 'Internal server error'
+        });
+      } catch (e) {
+        console.log('Client disconnected, stopping crawl');
+      } finally {
+        // Ensure browsers are closed even on error
+        await closeAllBrowsers();
+        await closeWriter();
+      }
     }
   })();
 
