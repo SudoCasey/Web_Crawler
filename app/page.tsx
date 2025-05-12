@@ -44,6 +44,28 @@ interface ScanResult {
   tookScreenshots: boolean;
 }
 
+interface TimerDisplayProps {
+  isLoading: boolean;
+  elapsed: number;
+  formatTime: (seconds: number) => string;
+}
+
+const TimerDisplay = React.memo(({ isLoading, elapsed, formatTime }: TimerDisplayProps) => {
+  if (!isLoading && elapsed === 0) return null;
+  
+  return (
+    <Box sx={{ mb: 2 }}>
+      <Alert severity="info">
+        {isLoading
+          ? `Crawl running: ${formatTime(elapsed)}`
+          : `Crawl completed in ${formatTime(elapsed)}`}
+      </Alert>
+    </Box>
+  );
+});
+
+TimerDisplay.displayName = 'TimerDisplay';
+
 export default function Home() {
   const [url, setUrl] = useState('');
   const [takeScreenshots, setTakeScreenshots] = useState(false);
@@ -223,16 +245,11 @@ export default function Home() {
             </Button>
           </Box>
 
-          {/* Timer display above results */}
-          {(isLoading || isCrawlComplete) && (
-            <Box sx={{ mb: 2 }}>
-              <Alert severity="info">
-                {isLoading
-                  ? `Crawl running: ${formatTime(elapsed)}`
-                  : `Crawl completed in ${formatTime(elapsed)}`}
-              </Alert>
-            </Box>
-          )}
+          <TimerDisplay 
+            isLoading={isLoading}
+            elapsed={elapsed}
+            formatTime={formatTime}
+          />
 
           {scanResult && (
             <Box sx={{ mt: 2 }}>
