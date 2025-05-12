@@ -62,7 +62,3 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 - If no sitemap is found, it recursively discovers and crawls links within the same domain
 - Screenshots are saved in the `public/screenshots` directory
 - Results are displayed in real-time on the frontend
-
-## License
-
-MIT 
