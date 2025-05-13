@@ -549,7 +549,7 @@ export default function Home() {
                     <Accordion defaultExpanded>
                       <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                         <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
-                          <Typography>Scanned Pages ({scanResult.results.length})</Typography>
+                          <Typography component="h2">Scanned Pages ({scanResult.results.length})</Typography>
                           {isLoading && (
                             <CircularProgress size={20} sx={{ ml: 2 }} />
                           )}
@@ -568,7 +568,7 @@ export default function Home() {
                           >
                             <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                               <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
-                                <Typography sx={{ wordBreak: 'break-all' }}>{result.url}</Typography>
+                                <Typography component="h3" sx={{ wordBreak: 'break-all' }}>{result.url}</Typography>
                                 {result.error && (
                                   <Typography color="error" sx={{ ml: 2 }}>
                                     (Error: {result.error})
@@ -581,7 +581,7 @@ export default function Home() {
                                 <Box sx={{ mt: 2 }}>
                                   <Accordion defaultExpanded>
                                     <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                                      <Typography variant="h6">Screenshot</Typography>
+                                      <Typography component="h4" variant="h6">Screenshot</Typography>
                                     </AccordionSummary>
                                     <AccordionDetails>
                                       <img 
@@ -595,7 +595,7 @@ export default function Home() {
                               )}
                               {result.accessibilityResults && (
                                 <Box sx={{ mt: 2 }}>
-                                  <Typography variant="h6" gutterBottom>Accessibility Results:</Typography>
+                                  <Typography component="h4" variant="h6" gutterBottom>Accessibility Results:</Typography>
                                   
                                   {/* Violations Section */}
                                   <Accordion 
@@ -608,7 +608,7 @@ export default function Home() {
                                     }}
                                   >
                                     <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                                      <Typography variant="subtitle1" color="error">
+                                      <Typography component="h5" variant="subtitle1" color="error">
                                         Violations ({result.accessibilityResults.violations.length})
                                       </Typography>
                                     </AccordionSummary>
@@ -625,7 +625,7 @@ export default function Home() {
                                           }}
                                         >
                                           <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                                            <Typography>
+                                            <Typography component="h6">
                                               {WCAG_MAPPING[violation.id] ? 
                                                 `SC ${WCAG_MAPPING[violation.id].sc} ${WCAG_MAPPING[violation.id].name} - ${violation.impact} impact (${violation.nodes.length} ${violation.nodes.length === 1 ? 'instance' : 'instances'})` :
                                                 `${violation.id} - ${violation.impact} impact (${violation.nodes.length} ${violation.nodes.length === 1 ? 'instance' : 'instances'})`
@@ -633,7 +633,7 @@ export default function Home() {
                                             </Typography>
                                           </AccordionSummary>
                                           <AccordionDetails>
-                                            <Typography variant="subtitle2" gutterBottom>
+                                            <Typography component="h6" variant="subtitle2" gutterBottom>
                                               WCAG Success Criterion:
                                             </Typography>
                                             <Typography paragraph>
@@ -648,25 +648,25 @@ export default function Home() {
                                                   })
                                                   .join(', ')}
                                             </Typography>
-                                            <Typography variant="subtitle2" gutterBottom>
+                                            <Typography component="h6" variant="subtitle2" gutterBottom>
                                               AXE Core Check:
                                             </Typography>
                                             <Typography paragraph>
                                               {violation.id}
                                             </Typography>
-                                            <Typography variant="subtitle2" gutterBottom>
+                                            <Typography component="h6" variant="subtitle2" gutterBottom>
                                               Description:
                                             </Typography>
                                             <Typography paragraph>
                                               {violation.description}
                                             </Typography>
-                                            <Typography variant="subtitle2" gutterBottom>
+                                            <Typography component="h6" variant="subtitle2" gutterBottom>
                                               Explanation:
                                             </Typography>
                                             <Typography paragraph>
                                               {violation.help}
                                             </Typography>
-                                            <Typography variant="subtitle2" gutterBottom>
+                                            <Typography component="h6" variant="subtitle2" gutterBottom>
                                               Affected Elements:
                                             </Typography>
                                             {violation.nodes.map((node, nIndex) => (
@@ -733,7 +733,7 @@ export default function Home() {
                                     }}
                                   >
                                     <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                                      <Typography variant="subtitle1" color="success.main">
+                                      <Typography component="h5" variant="subtitle1" color="success.main">
                                         Passes ({result.accessibilityResults.passes.length})
                                       </Typography>
                                     </AccordionSummary>
@@ -750,14 +750,14 @@ export default function Home() {
                                           }}
                                         >
                                           <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                                            <Typography>
+                                            <Typography component="h6">
                                               {WCAG_MAPPING[pass.id] ? 
                                                 `SC ${WCAG_MAPPING[pass.id].sc} ${WCAG_MAPPING[pass.id].name}` :
                                                 pass.id}
                                             </Typography>
                                           </AccordionSummary>
                                           <AccordionDetails>
-                                            <Typography variant="subtitle2" gutterBottom>
+                                            <Typography component="h6" variant="subtitle2" gutterBottom>
                                               WCAG Success Criterion:
                                             </Typography>
                                             <Typography paragraph>
@@ -772,13 +772,13 @@ export default function Home() {
                                                   })
                                                   .join(', ')}
                                             </Typography>
-                                            <Typography variant="subtitle2" gutterBottom>
+                                            <Typography component="h6" variant="subtitle2" gutterBottom>
                                               AXE Core Check:
                                             </Typography>
                                             <Typography paragraph>
                                               {pass.id}
                                             </Typography>
-                                            <Typography variant="subtitle2" gutterBottom>
+                                            <Typography component="h6" variant="subtitle2" gutterBottom>
                                               Description:
                                             </Typography>
                                             <Typography>
@@ -801,7 +801,7 @@ export default function Home() {
                                     }}
                                   >
                                     <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                                      <Typography variant="subtitle1" color="warning.main">
+                                      <Typography component="h5" variant="subtitle1" color="warning.main">
                                         Incomplete Tests ({result.accessibilityResults.incomplete.length})
                                       </Typography>
                                     </AccordionSummary>
@@ -818,14 +818,14 @@ export default function Home() {
                                           }}
                                         >
                                           <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                                            <Typography>
+                                            <Typography component="h6">
                                               {WCAG_MAPPING[incomplete.id] ? 
                                                 `SC ${WCAG_MAPPING[incomplete.id].sc} ${WCAG_MAPPING[incomplete.id].name}` :
                                                 incomplete.id}
                                             </Typography>
                                           </AccordionSummary>
                                           <AccordionDetails>
-                                            <Typography variant="subtitle2" gutterBottom>
+                                            <Typography component="h6" variant="subtitle2" gutterBottom>
                                               WCAG Success Criterion:
                                             </Typography>
                                             <Typography paragraph>
@@ -840,13 +840,13 @@ export default function Home() {
                                                   })
                                                   .join(', ')}
                                             </Typography>
-                                            <Typography variant="subtitle2" gutterBottom>
+                                            <Typography component="h6" variant="subtitle2" gutterBottom>
                                               AXE Core Check:
                                             </Typography>
                                             <Typography paragraph>
                                               {incomplete.id}
                                             </Typography>
-                                            <Typography variant="subtitle2" gutterBottom>
+                                            <Typography component="h6" variant="subtitle2" gutterBottom>
                                               Description:
                                             </Typography>
                                             <Typography>
@@ -869,7 +869,7 @@ export default function Home() {
                                     }}
                                   >
                                     <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                                      <Typography variant="subtitle1" color="secondary.main">
+                                      <Typography component="h5" variant="subtitle1" color="secondary.main">
                                         Non-applicable Tests ({result.accessibilityResults.nonApplicable?.length || 0})
                                       </Typography>
                                     </AccordionSummary>
@@ -886,14 +886,14 @@ export default function Home() {
                                           }}
                                         >
                                           <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                                            <Typography>
+                                            <Typography component="h6">
                                               {WCAG_MAPPING[nonApplicable.id] ? 
                                                 `SC ${WCAG_MAPPING[nonApplicable.id].sc} ${WCAG_MAPPING[nonApplicable.id].name}` :
                                                 nonApplicable.id}
                                             </Typography>
                                           </AccordionSummary>
                                           <AccordionDetails>
-                                            <Typography variant="subtitle2" gutterBottom>
+                                            <Typography component="h6" variant="subtitle2" gutterBottom>
                                               WCAG Success Criterion:
                                             </Typography>
                                             <Typography paragraph>
@@ -908,13 +908,13 @@ export default function Home() {
                                                   })
                                                   .join(', ')}
                                             </Typography>
-                                            <Typography variant="subtitle2" gutterBottom>
+                                            <Typography component="h6" variant="subtitle2" gutterBottom>
                                               AXE Core Check:
                                             </Typography>
                                             <Typography paragraph>
                                               {nonApplicable.id}
                                             </Typography>
-                                            <Typography variant="subtitle2" gutterBottom>
+                                            <Typography component="h6" variant="subtitle2" gutterBottom>
                                               Description:
                                             </Typography>
                                             <Typography>
