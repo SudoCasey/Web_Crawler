@@ -4,6 +4,9 @@ import { URL } from 'url';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { readFileSync } from 'fs';
+import { promisify } from 'util';
+import { exec } from 'child_process';
 
 interface CrawlRequest {
   url: string;
@@ -52,6 +55,7 @@ interface CrawlResult {
       helpUrl: string;
       tags: string[];
     }>;
+    error?: string;
   };
 }
 
@@ -77,8 +81,31 @@ async function getBrowser(): Promise<Browser> {
         '--disable-features=IsolateOrigins,site-per-process',
         '--disable-http2',
         '--disable-gpu',
-        '--disable-dev-shm-usage'
-      ]
+        '--disable-dev-shm-usage',
+        '--disable-software-rasterizer',
+        '--disable-extensions',
+        '--disable-default-apps',
+        '--disable-popup-blocking',
+        '--disable-notifications',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding',
+        '--disable-background-networking',
+        '--disable-breakpad',
+        '--disable-component-extensions-with-background-pages',
+        '--disable-features=TranslateUI,BlinkGenPropertyTrees',
+        '--disable-ipc-flooding-protection',
+        '--disable-prompt-on-repost',
+        '--metrics-recording-only',
+        '--no-first-run',
+        '--safebrowsing-disable-auto-update',
+        '--password-store=basic',
+        '--use-mock-keychain',
+        '--window-size=1920,1080'
+      ],
+      ignoreHTTPSErrors: true,
+      timeout: 60000, // Increase timeout to 60 seconds
+      protocolTimeout: 60000 // Increase protocol timeout to 60 seconds
     });
     browserPool.push(browser);
     return browser;
@@ -142,101 +169,231 @@ function generateSafeFilename(url: string): string {
   return `${Date.now()}-${hash}`;
 }
 
-async function runAccessibilityCheck(page: Page, wcagLevels: { A: boolean; AA: boolean; AAA: boolean }): Promise<CrawlResult['accessibilityResults']> {
+// Add type declarations at the top of the file
+declare global {
+  interface Window {
+    axe: {
+      configure: (config: any) => void;
+      run: (context: Document, options: any) => Promise<any>;
+    };
+  }
+}
+
+// Read axe-core source at runtime instead of importing it
+const axeCoreSource = readFileSync(
+  path.join(process.cwd(), 'node_modules', 'axe-core', 'axe.min.js'),
+  'utf-8'
+);
+
+const execAsync = promisify(exec);
+
+async function savePageLocally(page: Page, url: string): Promise<string> {
+  const tempDir = path.join(process.cwd(), 'temp', crypto.randomBytes(16).toString('hex'));
+  fs.mkdirSync(tempDir, { recursive: true });
+
+  // Save the HTML
+  const html = await page.content();
+  fs.writeFileSync(path.join(tempDir, 'index.html'), html);
+
+  // Save all CSS files
+  const cssFiles = await page.evaluate(() => {
+    return Array.from(document.styleSheets).map(sheet => {
+      try {
+        return sheet.href;
+      } catch {
+        return null;
+      }
+    }).filter((href): href is string => href !== null);
+  });
+
+  for (const cssUrl of cssFiles) {
+    try {
+      const response = await page.goto(cssUrl, { waitUntil: 'networkidle0' });
+      if (response) {
+        const css = await response.text();
+        const cssFilename = path.basename(new URL(cssUrl).pathname);
+        fs.writeFileSync(path.join(tempDir, cssFilename), css);
+      }
+    } catch (error) {
+      console.error(`Error saving CSS file ${cssUrl}:`, error);
+    }
+  }
+
+  // Save all images
+  const images = await page.evaluate(() => {
+    return Array.from(document.images).map(img => img.src);
+  });
+
+  for (const imgUrl of images) {
+    try {
+      const response = await page.goto(imgUrl, { waitUntil: 'networkidle0' });
+      if (response) {
+        const buffer = await response.buffer();
+        const imgFilename = path.basename(new URL(imgUrl).pathname);
+        fs.writeFileSync(path.join(tempDir, imgFilename), buffer);
+      }
+    } catch (error) {
+      console.error(`Error saving image ${imgUrl}:`, error);
+    }
+  }
+
+  return tempDir;
+}
+
+async function cleanupTempDir(tempDir: string) {
   try {
-    // First, check if axe is already injected
-    const axeExists = await page.evaluate(() => {
-      return typeof (window as any).axe !== 'undefined';
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  } catch (error) {
+    console.error(`Error cleaning up temp directory ${tempDir}:`, error);
+  }
+}
+
+async function runAccessibilityCheckOnLocalCopy(page: Page, tempDir: string): Promise<{
+  violations: any[];
+  passes: any[];
+  incomplete: any[];
+  error?: string;
+}> {
+  console.log('Starting accessibility check on local copy...');
+  let localPage: Page | null = null;
+  
+  try {
+    // Create a new browser instance specifically for the local copy
+    const browser = await puppeteer.launch({ 
+      headless: "new",
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-web-security',
+        '--disable-features=IsolateOrigins,site-per-process',
+        '--disable-http2',
+        '--disable-gpu',
+        '--disable-dev-shm-usage',
+        '--disable-software-rasterizer',
+        '--disable-extensions',
+        '--disable-default-apps',
+        '--disable-popup-blocking',
+        '--disable-notifications',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding',
+        '--disable-background-networking',
+        '--disable-breakpad',
+        '--disable-component-extensions-with-background-pages',
+        '--disable-features=TranslateUI,BlinkGenPropertyTrees',
+        '--disable-ipc-flooding-protection',
+        '--disable-prompt-on-repost',
+        '--metrics-recording-only',
+        '--no-first-run',
+        '--safebrowsing-disable-auto-update',
+        '--password-store=basic',
+        '--use-mock-keychain',
+        '--window-size=1920,1080'
+      ],
+      ignoreHTTPSErrors: true,
+      timeout: 60000,
+      protocolTimeout: 60000
     });
 
-    if (!axeExists) {
+    try {
+      // Create a new page for the local copy
+      localPage = await browser.newPage();
+      
+      // Set longer timeouts for local file loading
+      await localPage.setDefaultTimeout(60000);
+      await localPage.setDefaultNavigationTimeout(60000);
+
+      // Load the local HTML file
+      const localUrl = `file://${path.join(tempDir, 'index.html')}`;
+      console.log(`Loading local file: ${localUrl}`);
+      
+      const response = await localPage.goto(localUrl, { 
+        waitUntil: 'networkidle0',
+        timeout: 60000 
+      });
+
+      if (!response) {
+        throw new Error('Failed to load local file');
+      }
+
+      // Wait for the page to be fully loaded
+      await localPage.waitForFunction(() => {
+        return document.readyState === 'complete';
+      }, { timeout: 10000 });
+
       // Inject axe-core
-      await page.addScriptTag({
-        url: 'https://cdnjs.cloudflare.com/ajax/libs/axe-core/4.8.2/axe.min.js'
+      await localPage.addScriptTag({
+        content: axeCoreSource,
+        id: 'axe-core'
       });
 
       // Wait for axe to be available
-      await page.waitForFunction(() => {
-        return typeof (window as any).axe !== 'undefined';
-      }, { timeout: 5000 });
-    }
+      await localPage.waitForFunction(() => {
+        return typeof window.axe !== 'undefined';
+      }, { timeout: 10000 });
 
-    // Run axe-core analysis
-    const results = await page.evaluate((levels) => {
-      return new Promise<CrawlResult['accessibilityResults']>((resolve) => {
-        try {
-          const axe = (window as any).axe;
-          if (!axe) {
-            resolve({
-              violations: [],
-              passes: [],
-              incomplete: []
-            });
-            return;
-          }
+      // Configure axe-core
+      await localPage.evaluate(() => {
+        window.axe.configure({
+          rules: [
+            { id: 'color-contrast', enabled: true },
+            { id: 'document-title', enabled: true },
+            { id: 'html-has-lang', enabled: true },
+            { id: 'image-alt', enabled: true },
+            { id: 'link-name', enabled: true },
+            { id: 'meta-viewport', enabled: true }
+          ],
+          performanceTimer: true,
+          pingWaitTime: 1000,
+          resultTypes: ['violations', 'passes', 'incomplete']
+        });
+      });
 
-          // Configure axe options using WCAG tags
-          const options = {
-            runOnly: {
-              type: 'tag',
-              values: [
-                ...(levels.A ? ['wcag2a'] : []),
-                ...(levels.AA ? ['wcag2aa'] : []),
-                ...(levels.AAA ? ['wcag2aaa'] : [])
-              ]
-            },
-            resultTypes: ['violations', 'passes', 'incomplete'],
-            selectors: true,
-            ancestry: true,
-            xpath: true,
-            frameWaitTime: 1000,
-            iframes: true,
-            performanceTimer: true,
-            pingWaitTime: 500
-          };
+      // Run the analysis
+      const results = await Promise.race([
+        localPage.evaluate(() => {
+          return new Promise<{ violations: any[]; passes: any[]; incomplete: any[] }>((resolve, reject) => {
+            if (!window.axe) {
+              reject(new Error('axe-core not available'));
+              return;
+            }
 
-          // Run the analysis
-          axe.run(document, options)
-            .then((results: any) => {
+            window.axe.run(document, {
+              resultTypes: ['violations', 'passes', 'incomplete'],
+              pingWaitTime: 1000,
+              performanceTimer: true
+            }).then((results: any) => {
               resolve({
                 violations: results.violations || [],
                 passes: results.passes || [],
                 incomplete: results.incomplete || []
               });
-            })
-            .catch((error: unknown) => {
-              console.error('AXE analysis error:', error instanceof Error ? error.message : error);
-              resolve({
-                violations: [],
-                passes: [],
-                incomplete: []
-              });
+            }).catch((error: Error) => {
+              console.error('Error during analysis:', error);
+              reject(error);
             });
-        } catch (error) {
-          console.error('Error in page context:', error.message || error);
-          resolve({
-            violations: [],
-            passes: [],
-            incomplete: []
           });
-        }
-      });
-    }, wcagLevels);
+        }),
+        new Promise<{ violations: any[]; passes: any[]; incomplete: any[] }>((_, reject) => 
+          setTimeout(() => reject(new Error('Analysis timed out')), 20000)
+        )
+      ]);
 
-    // Ensure we have a valid result object
-    const validResults: CrawlResult['accessibilityResults'] = {
-      violations: results?.violations || [],
-      passes: results?.passes || [],
-      incomplete: results?.incomplete || []
-    };
-
-    return validResults;
+      return results;
+    } finally {
+      // Clean up the local page and browser
+      if (localPage) {
+        await localPage.close();
+      }
+      await browser.close();
+    }
   } catch (error) {
-    console.error('Error running accessibility check:', error);
+    console.error('Accessibility check failed:', error);
     return {
       violations: [],
       passes: [],
-      incomplete: []
+      incomplete: [],
+      error: error instanceof Error ? error.message : 'Unknown error during accessibility check'
     };
   }
 }
@@ -250,17 +407,21 @@ async function crawlPage(
   checkAccessibility: boolean,
   wcagLevels: { A: boolean; AA: boolean; AAA: boolean }
 ): Promise<CrawlResult> {
+  console.log(`Starting crawl of ${url}`);
   if (visited.has(url)) {
+    console.log(`URL ${url} already visited, skipping`);
     return { url, links: [] };
   }
   
   visited.add(url);
   const browser = await getBrowser();
   const page = await browser.newPage();
+  let pageClosed = false;
   
   try {
-    // Set a more reasonable timeout
-    await page.setDefaultNavigationTimeout(30000);
+    // Set longer timeouts
+    await page.setDefaultTimeout(60000);
+    await page.setDefaultNavigationTimeout(60000);
     
     // Configure page to handle redirects and dialogs
     await page.setRequestInterception(true);
@@ -285,9 +446,10 @@ async function crawlPage(
     });
 
     // Set a longer timeout and wait until network is idle
+    console.log(`Navigating to ${url}`);
     const response = await page.goto(url, { 
       waitUntil: 'networkidle0',
-      timeout: 30000 // 30 seconds
+      timeout: 60000 // 60 seconds
     });
 
     // Handle various HTTP status codes
@@ -295,6 +457,7 @@ async function crawlPage(
     if (status) {
       if (status === 304) {
         await page.close();
+        pageClosed = true;
         return {
           url,
           links: [],
@@ -303,6 +466,7 @@ async function crawlPage(
       }
       if (status === 204 || status === 205) {
         await page.close();
+        pageClosed = true;
         return {
           url,
           links: [],
@@ -311,6 +475,7 @@ async function crawlPage(
       }
       if (status === 407) {
         await page.close();
+        pageClosed = true;
         return {
           url,
           links: [],
@@ -319,6 +484,7 @@ async function crawlPage(
       }
       if (status >= 400) {
         await page.close();
+        pageClosed = true;
         return {
           url,
           links: [],
@@ -380,18 +546,35 @@ async function crawlPage(
     }
 
     let accessibilityResults: CrawlResult['accessibilityResults'] | undefined;
-    if (checkAccessibility) {
-      // Ensure the page is fully loaded and stable before running accessibility checks
-      await page.waitForFunction(() => {
-        return document.readyState === 'complete';
-      }, { timeout: 5000 });
-
-      // Run the accessibility check
-      accessibilityResults = await runAccessibilityCheck(page, wcagLevels);
+    if (checkAccessibility && !pageClosed) {
+      try {
+        // Save the page locally
+        const tempDir = await savePageLocally(page, url);
+        
+        try {
+          // Run accessibility check on the local copy
+          accessibilityResults = await runAccessibilityCheckOnLocalCopy(page, tempDir);
+        } finally {
+          // Clean up the temporary directory
+          await cleanupTempDir(tempDir);
+        }
+      } catch (accessibilityError) {
+        console.error('Accessibility check failed:', accessibilityError);
+        accessibilityResults = {
+          violations: [],
+          passes: [],
+          incomplete: [],
+          error: accessibilityError instanceof Error ? accessibilityError.message : 'Unknown error during accessibility check'
+        };
+      }
     }
     
     // After successful crawl, close the page but keep the browser
-    await page.close();
+    if (!pageClosed) {
+      await page.close();
+      pageClosed = true;
+    }
+    
     return {
       url,
       screenshot: screenshotPath,
@@ -400,7 +583,13 @@ async function crawlPage(
     };
   } catch (error) {
     console.error(`Error crawling ${url}:`, error);
-    await page.close();
+    if (!pageClosed) {
+      try {
+        await page.close();
+      } catch (closeError) {
+        console.error('Error closing page:', closeError);
+      }
+    }
     
     // Handle specific error types
     let errorMessage = 'Unknown error';
@@ -435,6 +624,7 @@ async function crawlPage(
 }
 
 export async function POST(request: Request) {
+  console.log('Received crawl request');
   const encoder = new TextEncoder();
   const stream = new TransformStream();
   const writer = stream.writable.getWriter();
@@ -443,8 +633,10 @@ export async function POST(request: Request) {
   const writeResponse = async (data: any) => {
     if (!isClientConnected) return;
     try {
+      console.log('Writing response:', JSON.stringify(data));
       await writer.write(encoder.encode(JSON.stringify(data) + '\n'));
     } catch (error) {
+      console.error('Error writing response:', error);
       isClientConnected = false;
       return;
     }
@@ -453,6 +645,7 @@ export async function POST(request: Request) {
   const closeWriter = async () => {
     if (!isClientConnected) return;
     try {
+      console.log('Closing writer');
       await writer.close();
     } catch (error) {
       console.error('Error closing writer:', error);
@@ -461,16 +654,22 @@ export async function POST(request: Request) {
 
   (async () => {
     try {
+      console.log('Parsing request body');
       const { url, takeScreenshots, crawlEntireWebsite, checkAccessibility, wcagLevels }: CrawlRequest = await request.json();
       
       if (!url) {
+        console.error('No URL provided');
         await writeResponse({ error: 'URL is required' });
         await closeWriter();
         return;
       }
 
+      console.log(`Starting crawl for URL: ${url}`);
+      console.log('Options:', { takeScreenshots, crawlEntireWebsite, checkAccessibility, wcagLevels });
+
       // Clean up old screenshots before starting new scan
       if (takeScreenshots) {
+        console.log('Cleaning up old screenshots');
         await cleanupScreenshots();
       }
       
@@ -481,16 +680,22 @@ export async function POST(request: Request) {
       
       try {
         if (crawlEntireWebsite) {
+          console.log('Starting full website crawl');
           const sitemapUrls = await getSitemapUrls(baseUrl);
           usedSitemap = sitemapUrls.length > 0;
+          console.log(`Sitemap found: ${usedSitemap}, URLs to crawl: ${sitemapUrls.length}`);
           const urlsToCrawl = sitemapUrls.length > 0 ? sitemapUrls : [url];
           
           // Process URLs in parallel with a concurrency limit
           const concurrencyLimit = 3;
           for (let i = 0; i < urlsToCrawl.length; i += concurrencyLimit) {
-            if (!isClientConnected) break;
+            if (!isClientConnected) {
+              console.log('Client disconnected, stopping crawl');
+              break;
+            }
             
             const batch = urlsToCrawl.slice(i, i + concurrencyLimit);
+            console.log(`Processing batch of ${batch.length} URLs`);
             const batchResults = await Promise.all(
               batch.map(urlToCrawl => 
                 !visited.has(urlToCrawl) ? crawlPage(urlToCrawl, takeScreenshots, visited, baseUrl, true, checkAccessibility, wcagLevels) : null
@@ -498,6 +703,7 @@ export async function POST(request: Request) {
             );
             
             results.push(...batchResults.filter((r): r is CrawlResult => r !== null));
+            console.log(`Completed batch, total results: ${results.length}`);
             
             // Send intermediate results
             await writeResponse({
@@ -520,10 +726,15 @@ export async function POST(request: Request) {
                 }
               });
               
+              console.log(`Found ${newLinks.size} new links to crawl`);
               // Process new links with delay
               for (const link of Array.from(newLinks)) {
-                if (!isClientConnected) break;
+                if (!isClientConnected) {
+                  console.log('Client disconnected, stopping crawl');
+                  break;
+                }
                 await delay(1000);
+                console.log(`Crawling new link: ${link}`);
                 const subResult = await crawlPage(link, takeScreenshots, visited, baseUrl, true, checkAccessibility, wcagLevels);
                 results.push(subResult);
                 
@@ -537,6 +748,7 @@ export async function POST(request: Request) {
             }
           }
         } else {
+          console.log('Starting single page crawl');
           // Single page crawl
           const result = await crawlPage(url, takeScreenshots, visited, baseUrl, false, checkAccessibility, wcagLevels);
           results.push(result);
@@ -550,6 +762,7 @@ export async function POST(request: Request) {
         }
         
         if (isClientConnected) {
+          console.log('Crawl completed, sending final results');
           // Send final results
           await writeResponse({
             results,
@@ -560,7 +773,7 @@ export async function POST(request: Request) {
         }
       } catch (error) {
         if (error instanceof Error && error.name === 'AbortError') {
-          // Crawl cancelled by client
+          console.log('Crawl cancelled by client');
         } else {
           console.error('Error during crawl:', error);
           await writeResponse({
@@ -568,6 +781,7 @@ export async function POST(request: Request) {
           });
         }
       } finally {
+        console.log('Cleaning up resources');
         // Clean up browser instances
         await closeAllBrowsers();
         await closeWriter();
@@ -579,8 +793,10 @@ export async function POST(request: Request) {
           error: 'Internal server error'
         });
       } catch (e) {
+        console.error('Error sending error response:', e);
         // Client disconnected
       } finally {
+        console.log('Cleaning up resources after error');
         // Ensure browsers are closed even on error
         await closeAllBrowsers();
         await closeWriter();
