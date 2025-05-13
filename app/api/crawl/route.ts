@@ -228,16 +228,38 @@ async function savePageLocally(page: Page, url: string): Promise<string> {
     }).filter((href): href is string => href !== null);
   });
 
-  for (const cssUrl of cssFiles) {
+  // Filter out known problematic CSS files
+  const filteredCssFiles = cssFiles.filter(cssUrl => {
     try {
-      const response = await page.goto(cssUrl, { waitUntil: 'networkidle0' });
-      if (response) {
+      const url = new URL(cssUrl);
+      // Skip disallowed and broken CSS files
+      if (url.pathname.includes('/disallowed/') || 
+          url.pathname.includes('brokencss.css')) {
+        return false;
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  });
+
+  for (const cssUrl of filteredCssFiles) {
+    try {
+      const response = await page.goto(cssUrl, { 
+        waitUntil: 'networkidle0',
+        timeout: 10000 // Add timeout to prevent hanging
+      });
+      
+      if (response && response.ok()) {
         const css = await response.text();
         const cssFilename = path.basename(new URL(cssUrl).pathname);
         fs.writeFileSync(path.join(tempDir, cssFilename), css);
       }
     } catch (error) {
-      console.error(`Error saving CSS file ${cssUrl}:`, error);
+      // Only log errors for non-preflight requests
+      if (!(error instanceof Error && error.message.includes('preflight request'))) {
+        console.error(`Error saving CSS file ${cssUrl}:`, error);
+      }
     }
   }
 
@@ -248,14 +270,20 @@ async function savePageLocally(page: Page, url: string): Promise<string> {
 
   for (const imgUrl of images) {
     try {
-      const response = await page.goto(imgUrl, { waitUntil: 'networkidle0' });
-      if (response) {
+      const response = await page.goto(imgUrl, { 
+        waitUntil: 'networkidle0',
+        timeout: 10000 // Add timeout to prevent hanging
+      });
+      if (response && response.ok()) {
         const buffer = await response.buffer();
         const imgFilename = path.basename(new URL(imgUrl).pathname);
         fs.writeFileSync(path.join(tempDir, imgFilename), buffer);
       }
     } catch (error) {
-      console.error(`Error saving image ${imgUrl}:`, error);
+      // Only log errors for non-preflight requests
+      if (!(error instanceof Error && error.message.includes('preflight request'))) {
+        console.error(`Error saving image ${imgUrl}:`, error);
+      }
     }
   }
 
