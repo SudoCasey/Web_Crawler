@@ -137,3 +137,6 @@ dist
 
 # Screenshots
 public/screenshots/*
+
+# Temporary local copies of crawled sites
+temp/*

@@ -55,6 +55,14 @@ interface CrawlResult {
       helpUrl: string;
       tags: string[];
     }>;
+    nonApplicable: Array<{
+      id: string;
+      impact: string;
+      description: string;
+      help: string;
+      helpUrl: string;
+      tags: string[];
+    }>;
     error?: string;
   };
 }
@@ -252,6 +260,7 @@ async function runAccessibilityCheckOnLocalCopy(page: Page, tempDir: string): Pr
   violations: any[];
   passes: any[];
   incomplete: any[];
+  nonApplicable: any[];
   error?: string;
 }> {
   console.log('Starting accessibility check on local copy...');
@@ -316,10 +325,33 @@ async function runAccessibilityCheckOnLocalCopy(page: Page, tempDir: string): Pr
         throw new Error('Failed to load local file');
       }
 
-      // Wait for the page to be fully loaded
-      await localPage.waitForFunction(() => {
-        return document.readyState === 'complete';
-      }, { timeout: 10000 });
+      // Enhanced page load verification
+      await Promise.all([
+        // Wait for the page to be fully loaded
+        localPage.waitForFunction(() => {
+          return document.readyState === 'complete';
+        }, { timeout: 10000 }),
+        
+        // Wait for any pending network requests
+        localPage.waitForFunction(() => {
+          return window.performance.getEntriesByType('resource')
+            .every(resource => (resource as PerformanceResourceTiming).responseEnd > 0);
+        }, { timeout: 10000 }),
+        
+        // Wait for any pending animations
+        localPage.waitForFunction(() => {
+          return !document.querySelector('*[style*="animation"]');
+        }, { timeout: 5000 }).catch(() => {
+          console.log('Animation timeout, continuing anyway...');
+        }),
+        
+        // Wait for any pending images
+        localPage.waitForFunction(() => {
+          return Array.from(document.images).every(img => img.complete);
+        }, { timeout: 10000 }).catch(() => {
+          console.log('Image load timeout, continuing anyway...');
+        })
+      ]);
 
       // Inject axe-core
       await localPage.addScriptTag({
@@ -345,28 +377,34 @@ async function runAccessibilityCheckOnLocalCopy(page: Page, tempDir: string): Pr
           ],
           performanceTimer: true,
           pingWaitTime: 1000,
-          resultTypes: ['violations', 'passes', 'incomplete']
+          resultTypes: ['violations', 'passes', 'incomplete', 'inapplicable']
         });
       });
 
       // Run the analysis
       const results = await Promise.race([
         localPage.evaluate(() => {
-          return new Promise<{ violations: any[]; passes: any[]; incomplete: any[] }>((resolve, reject) => {
+          return new Promise<{ 
+            violations: any[]; 
+            passes: any[]; 
+            incomplete: any[];
+            inapplicable: any[];
+          }>((resolve, reject) => {
             if (!window.axe) {
               reject(new Error('axe-core not available'));
               return;
             }
 
             window.axe.run(document, {
-              resultTypes: ['violations', 'passes', 'incomplete'],
+              resultTypes: ['violations', 'passes', 'incomplete', 'inapplicable'],
               pingWaitTime: 1000,
               performanceTimer: true
             }).then((results: any) => {
               resolve({
                 violations: results.violations || [],
                 passes: results.passes || [],
-                incomplete: results.incomplete || []
+                incomplete: results.incomplete || [],
+                inapplicable: results.inapplicable || []
               });
             }).catch((error: Error) => {
               console.error('Error during analysis:', error);
@@ -374,12 +412,32 @@ async function runAccessibilityCheckOnLocalCopy(page: Page, tempDir: string): Pr
             });
           });
         }),
-        new Promise<{ violations: any[]; passes: any[]; incomplete: any[] }>((_, reject) => 
+        new Promise<{ 
+          violations: any[]; 
+          passes: any[]; 
+          incomplete: any[];
+          inapplicable: any[];
+        }>((_, reject) => 
           setTimeout(() => reject(new Error('Analysis timed out')), 20000)
         )
       ]);
 
-      return results;
+      // Map inapplicable results to nonApplicable
+      const nonApplicable = results.inapplicable.map(result => ({
+        id: result.id,
+        impact: result.impact,
+        description: result.description,
+        help: result.help,
+        helpUrl: result.helpUrl,
+        tags: result.tags
+      }));
+
+      return {
+        violations: results.violations,
+        passes: results.passes,
+        incomplete: results.incomplete,
+        nonApplicable
+      };
     } finally {
       // Clean up the local page and browser
       if (localPage) {
@@ -393,6 +451,7 @@ async function runAccessibilityCheckOnLocalCopy(page: Page, tempDir: string): Pr
       violations: [],
       passes: [],
       incomplete: [],
+      nonApplicable: [],
       error: error instanceof Error ? error.message : 'Unknown error during accessibility check'
     };
   }
@@ -564,6 +623,7 @@ async function crawlPage(
           violations: [],
           passes: [],
           incomplete: [],
+          nonApplicable: [],
           error: accessibilityError instanceof Error ? accessibilityError.message : 'Unknown error during accessibility check'
         };
       }

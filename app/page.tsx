@@ -27,14 +27,18 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 
 // WCAG 2.2 Success Criterion mapping
 const WCAG_MAPPING: { [key: string]: { name: string; sc: string; level: 'A' | 'AA' | 'AAA'; url: string } } = {
+  'accesskeys': { name: 'Keyboard', sc: '2.1.4', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/character-key-shortcuts.html' },
   'aria-allowed-attr': { name: 'Name, Role, Value', sc: '4.1.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html' },
   'aria-allowed-role': { name: 'Name, Role, Value', sc: '4.1.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html' },
   'aria-command-name': { name: 'Name, Role, Value', sc: '4.1.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html' },
+  'aria-conditional-attr': { name: 'Name, Role, Value', sc: '4.1.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html' },
+  'aria-deprecated-role': { name: 'Name, Role, Value', sc: '4.1.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html' },
   'aria-hidden-body': { name: 'Name, Role, Value', sc: '4.1.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html' },
   'aria-hidden-focus': { name: 'Name, Role, Value', sc: '4.1.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html' },
   'aria-input-field-name': { name: 'Name, Role, Value', sc: '4.1.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html' },
   'aria-meter-name': { name: 'Name, Role, Value', sc: '4.1.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html' },
   'aria-progressbar-name': { name: 'Name, Role, Value', sc: '4.1.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html' },
+  'aria-prohibited-attr': { name: 'Name, Role, Value', sc: '4.1.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html' },
   'aria-required-attr': { name: 'Name, Role, Value', sc: '4.1.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html' },
   'aria-required-children': { name: 'Name, Role, Value', sc: '4.1.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html' },
   'aria-required-parent': { name: 'Name, Role, Value', sc: '4.1.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html' },
@@ -55,6 +59,7 @@ const WCAG_MAPPING: { [key: string]: { name: string; sc: string; level: 'A' | 'A
   'duplicate-id-aria': { name: 'Parsing', sc: '4.1.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/parsing.html' },
   'form-field-multiple-labels': { name: 'Labels or Instructions', sc: '3.3.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/labels-or-instructions.html' },
   'frame-title': { name: 'Frame Title', sc: '2.4.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/frame-titled.html' },
+  'frame-tested': { name: 'Frame Title', sc: '2.4.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/frame-titled.html' },
   'heading-order': { name: 'Info and Relationships', sc: '1.3.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/info-and-relationships.html' },
   'html-has-lang': { name: 'Language of Page', sc: '3.1.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/language-of-page.html' },
   'html-lang-valid': { name: 'Language of Page', sc: '3.1.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/language-of-page.html' },
@@ -78,8 +83,9 @@ const WCAG_MAPPING: { [key: string]: { name: string; sc: string; level: 'A' | 'A
   'marquee': { name: 'Pause, Stop, Hide', sc: '2.2.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/pause-stop-hide.html' },
   'meta-refresh': { name: 'Timing Adjustable', sc: '2.2.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/timing-adjustable.html' },
   'meta-viewport': { name: 'Reflow', sc: '1.4.10', level: 'AA', url: 'https://www.w3.org/WAI/WCAG22/Understanding/reflow.html' },
-  'nested-interactive': { name: 'Name, Role, Value', sc: '4.1.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html' },
-  'no-autoplay-audio': { name: 'Audio Control', sc: '1.4.2', level: 'A', url: 'https://www.w3.org/WAI/WAI/WCAG22/Understanding/audio-control.html' },
+  'meta-viewport-large': { name: 'Resize Text', sc: '1.4.4', level: 'AA', url: 'https://www.w3.org/WAI/WCAG22/Understanding/resize-text.html' },
+  'nested-interactive': { name: 'Keyboard', sc: '2.1.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/keyboard.html' },
+  'no-autoplay-audio': { name: 'Audio Control', sc: '1.4.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/audio-control.html' },
   'object-alt': { name: 'Non-text Content', sc: '1.1.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/non-text-content.html' },
   'p-as-heading': { name: 'Info and Relationships', sc: '1.3.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/info-and-relationships.html' },
   'page-has-heading-one': { name: 'Info and Relationships', sc: '1.3.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/info-and-relationships.html' },
@@ -93,6 +99,27 @@ const WCAG_MAPPING: { [key: string]: { name: string; sc: string; level: 'A' | 'A
   'th-has-data-cells': { name: 'Info and Relationships', sc: '1.3.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/info-and-relationships.html' },
   'valid-lang': { name: 'Language of Parts', sc: '3.1.2', level: 'AA', url: 'https://www.w3.org/WAI/WCAG22/Understanding/language-of-parts.html' },
   'video-caption': { name: 'Captions (Prerecorded)', sc: '1.2.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/captions-prerecorded.html' },
+  'scope-attr-valid': { name: 'Info and Relationships', sc: '1.3.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/info-and-relationships.html' },
+  'summary-name': { name: 'Name, Role, Value', sc: '4.1.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html' },
+  'tabindex': { name: 'Keyboard', sc: '2.1.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/keyboard.html' },
+  'table-duplicate-name': { name: 'Info and Relationships', sc: '1.3.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/info-and-relationships.html' },
+  'region': { name: 'Info and Relationships', sc: '1.3.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/info-and-relationships.html' },
+  'avoid-inline-spacing': { name: 'Text Spacing', sc: '1.4.12', level: 'AA', url: 'https://www.w3.org/WAI/WCAG22/Understanding/text-spacing.html' },
+  'empty-heading': { name: 'Info and Relationships', sc: '1.3.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/info-and-relationships.html' },
+  'area-alt': { name: 'Non-text Content', sc: '1.1.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/non-text-content.html' },
+  'aria-braille-equivalent': { name: 'Name, Role, Value', sc: '4.1.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html' },
+  'aria-dialog-name': { name: 'Name, Role, Value', sc: '4.1.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html' },
+  'autocomplete-valid': { name: 'Identify Input Purpose', sc: '1.3.5', level: 'AA', url: 'https://www.w3.org/WAI/WCAG22/Understanding/identify-input-purpose.html' },
+  'blink': { name: 'Pause, Stop, Hide', sc: '2.2.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/pause-stop-hide.html' },
+  'definition-list': { name: 'Info and Relationships', sc: '1.3.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/info-and-relationships.html' },
+  'dlitem': { name: 'Info and Relationships', sc: '1.3.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/info-and-relationships.html' },
+  'empty-table-header': { name: 'Info and Relationships', sc: '1.3.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/info-and-relationships.html' },
+  'frame-focusable-content': { name: 'Keyboard', sc: '2.1.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/keyboard.html' },
+  'frame-title-unique': { name: 'Frame Title', sc: '2.4.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/frame-titled.html' },
+  'image-redundant-alt': { name: 'Non-text Content', sc: '1.1.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/non-text-content.html' },
+  'label-title-only': { name: 'Labels or Instructions', sc: '3.3.2', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/labels-or-instructions.html' },
+  'link-in-text-block': { name: 'Link Purpose (In Context)', sc: '2.4.4', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/link-purpose-in-context.html' },
+  'skip-link': { name: 'Bypass Blocks', sc: '2.4.1', level: 'A', url: 'https://www.w3.org/WAI/WCAG22/Understanding/bypass-blocks.html' },
 };
 
 const theme = createTheme({
@@ -155,6 +182,14 @@ interface CrawlResult {
       tags: string[];
     }>;
     incomplete: Array<{
+      id: string;
+      impact: string;
+      description: string;
+      help: string;
+      helpUrl: string;
+      tags: string[];
+    }>;
+    nonApplicable?: Array<{
       id: string;
       impact: string;
       description: string;
@@ -602,14 +637,16 @@ export default function Home() {
                                               WCAG Success Criterion:
                                             </Typography>
                                             <Typography paragraph>
-                                              {violation.tags
-                                                .filter(tag => tag.startsWith('wcag2'))
-                                                .map(tag => {
-                                                  const level = tag.endsWith('a') ? 'A' : tag.endsWith('aa') ? 'AA' : 'AAA';
-                                                  const sc = tag.match(/\d+\.\d+\.\d+/)?.[0] || '';
-                                                  return `SC ${sc} Level ${level}`;
-                                                })
-                                                .join(', ')}
+                                              {WCAG_MAPPING[violation.id] ? 
+                                                `SC ${WCAG_MAPPING[violation.id].sc} ${WCAG_MAPPING[violation.id].name} (Level ${WCAG_MAPPING[violation.id].level})` :
+                                                violation.tags
+                                                  .filter(tag => tag.startsWith('wcag2'))
+                                                  .map(tag => {
+                                                    const level = tag.endsWith('a') ? 'A' : tag.endsWith('aa') ? 'AA' : 'AAA';
+                                                    const sc = tag.match(/\d+\.\d+\.\d+/)?.[0] || '';
+                                                    return `SC ${sc} Level ${level}`;
+                                                  })
+                                                  .join(', ')}
                                             </Typography>
                                             <Typography variant="subtitle2" gutterBottom>
                                               Description:
@@ -703,14 +740,16 @@ export default function Home() {
                                                 <Box>
                                                   <Typography>{WCAG_MAPPING[pass.id]?.name || pass.id}</Typography>
                                                   <Typography variant="body2" color="text.secondary">
-                                                    {pass.tags
-                                                      .filter(tag => tag.startsWith('wcag2'))
-                                                      .map(tag => {
-                                                        const level = tag.endsWith('a') ? 'A' : tag.endsWith('aa') ? 'AA' : 'AAA';
-                                                        const sc = tag.match(/\d+\.\d+\.\d+/)?.[0] || '';
-                                                        return `WCAG ${sc} (Level ${level})`;
-                                                      })
-                                                      .join(', ')}
+                                                    {WCAG_MAPPING[pass.id] 
+                                                      ? `SC ${WCAG_MAPPING[pass.id].sc} ${WCAG_MAPPING[pass.id].name} (Level ${WCAG_MAPPING[pass.id].level})`
+                                                      : pass.tags
+                                                          .filter(tag => tag.startsWith('wcag2'))
+                                                          .map(tag => {
+                                                            const level = tag.endsWith('a') ? 'A' : tag.endsWith('aa') ? 'AA' : 'AAA';
+                                                            const sc = tag.match(/\d+\.\d+\.\d+/)?.[0] || '';
+                                                            return `SC ${sc} Level ${level}`;
+                                                          })
+                                                          .join(', ')}
                                                   </Typography>
                                                 </Box>
                                               }
@@ -746,18 +785,65 @@ export default function Home() {
                                                 <Box>
                                                   <Typography>{WCAG_MAPPING[incomplete.id]?.name || incomplete.id}</Typography>
                                                   <Typography variant="body2" color="text.secondary">
-                                                    {incomplete.tags
-                                                      .filter(tag => tag.startsWith('wcag2'))
-                                                      .map(tag => {
-                                                        const level = tag.endsWith('a') ? 'A' : tag.endsWith('aa') ? 'AA' : 'AAA';
-                                                        const sc = tag.match(/\d+\.\d+\.\d+/)?.[0] || '';
-                                                        return `WCAG ${sc} (Level ${level})`;
-                                                      })
-                                                      .join(', ')}
+                                                    {WCAG_MAPPING[incomplete.id]
+                                                      ? `SC ${WCAG_MAPPING[incomplete.id].sc} ${WCAG_MAPPING[incomplete.id].name} (Level ${WCAG_MAPPING[incomplete.id].level})`
+                                                      : incomplete.tags
+                                                          .filter(tag => tag.startsWith('wcag2'))
+                                                          .map(tag => {
+                                                            const level = tag.endsWith('a') ? 'A' : tag.endsWith('aa') ? 'AA' : 'AAA';
+                                                            const sc = tag.match(/\d+\.\d+\.\d+/)?.[0] || '';
+                                                            return `SC ${sc} Level ${level}`;
+                                                          })
+                                                          .join(', ')}
                                                   </Typography>
                                                 </Box>
                                               }
                                               secondary={incomplete.description}
+                                            />
+                                          </ListItem>
+                                        ))}
+                                      </List>
+                                    </AccordionDetails>
+                                  </Accordion>
+
+                                  {/* Non-applicable Section */}
+                                  <Accordion 
+                                    defaultExpanded={false}
+                                    sx={{
+                                      '&.Mui-expanded': {
+                                        backgroundColor: 'rgba(156, 39, 176, 0.08)',
+                                        borderLeft: '4px solid #9c27b0',
+                                      },
+                                    }}
+                                  >
+                                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                                      <Typography variant="subtitle1" color="secondary.main">
+                                        Non-applicable Tests ({result.accessibilityResults.nonApplicable?.length || 0})
+                                      </Typography>
+                                    </AccordionSummary>
+                                    <AccordionDetails>
+                                      <List>
+                                        {result.accessibilityResults.nonApplicable?.map((nonApplicable, nIndex) => (
+                                          <ListItem key={nIndex}>
+                                            <ListItemText
+                                              primary={
+                                                <Box>
+                                                  <Typography>{WCAG_MAPPING[nonApplicable.id]?.name || nonApplicable.id}</Typography>
+                                                  <Typography variant="body2" color="text.secondary">
+                                                    {WCAG_MAPPING[nonApplicable.id]
+                                                      ? `SC ${WCAG_MAPPING[nonApplicable.id].sc} ${WCAG_MAPPING[nonApplicable.id].name} (Level ${WCAG_MAPPING[nonApplicable.id].level})`
+                                                      : nonApplicable.tags
+                                                          .filter(tag => tag.startsWith('wcag2'))
+                                                          .map(tag => {
+                                                            const level = tag.endsWith('a') ? 'A' : tag.endsWith('aa') ? 'AA' : 'AAA';
+                                                            const sc = tag.match(/\d+\.\d+\.\d+/)?.[0] || '';
+                                                            return `SC ${sc} Level ${level}`;
+                                                          })
+                                                          .join(', ')}
+                                                  </Typography>
+                                                </Box>
+                                              }
+                                              secondary={nonApplicable.description}
                                             />
                                           </ListItem>
                                         ))}
