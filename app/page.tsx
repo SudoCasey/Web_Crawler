@@ -649,6 +649,12 @@ export default function Home() {
                                                   .join(', ')}
                                             </Typography>
                                             <Typography variant="subtitle2" gutterBottom>
+                                              AXE Core Check:
+                                            </Typography>
+                                            <Typography paragraph>
+                                              {violation.id}
+                                            </Typography>
+                                            <Typography variant="subtitle2" gutterBottom>
                                               Description:
                                             </Typography>
                                             <Typography paragraph>
@@ -732,32 +738,55 @@ export default function Home() {
                                       </Typography>
                                     </AccordionSummary>
                                     <AccordionDetails>
-                                      <List>
-                                        {result.accessibilityResults.passes.map((pass, pIndex) => (
-                                          <ListItem key={pIndex}>
-                                            <ListItemText
-                                              primary={
-                                                <Box>
-                                                  <Typography>{WCAG_MAPPING[pass.id]?.name || pass.id}</Typography>
-                                                  <Typography variant="body2" color="text.secondary">
-                                                    {WCAG_MAPPING[pass.id] 
-                                                      ? `SC ${WCAG_MAPPING[pass.id].sc} ${WCAG_MAPPING[pass.id].name} (Level ${WCAG_MAPPING[pass.id].level})`
-                                                      : pass.tags
-                                                          .filter(tag => tag.startsWith('wcag2'))
-                                                          .map(tag => {
-                                                            const level = tag.endsWith('a') ? 'A' : tag.endsWith('aa') ? 'AA' : 'AAA';
-                                                            const sc = tag.match(/\d+\.\d+\.\d+/)?.[0] || '';
-                                                            return `SC ${sc} Level ${level}`;
-                                                          })
-                                                          .join(', ')}
-                                                  </Typography>
-                                                </Box>
-                                              }
-                                              secondary={pass.description}
-                                            />
-                                          </ListItem>
-                                        ))}
-                                      </List>
+                                      {result.accessibilityResults.passes.map((pass, pIndex) => (
+                                        <Accordion 
+                                          key={pIndex}
+                                          defaultExpanded={false}
+                                          sx={{
+                                            '&.Mui-expanded': {
+                                              backgroundColor: 'rgba(46, 125, 50, 0.04)',
+                                              borderLeft: '2px solid #2e7d32',
+                                            },
+                                          }}
+                                        >
+                                          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                                            <Typography>
+                                              {WCAG_MAPPING[pass.id] ? 
+                                                `SC ${WCAG_MAPPING[pass.id].sc} ${WCAG_MAPPING[pass.id].name}` :
+                                                pass.id}
+                                            </Typography>
+                                          </AccordionSummary>
+                                          <AccordionDetails>
+                                            <Typography variant="subtitle2" gutterBottom>
+                                              WCAG Success Criterion:
+                                            </Typography>
+                                            <Typography paragraph>
+                                              {WCAG_MAPPING[pass.id] ? 
+                                                `SC ${WCAG_MAPPING[pass.id].sc} ${WCAG_MAPPING[pass.id].name} (Level ${WCAG_MAPPING[pass.id].level})` :
+                                                pass.tags
+                                                  .filter(tag => tag.startsWith('wcag2'))
+                                                  .map(tag => {
+                                                    const level = tag.endsWith('a') ? 'A' : tag.endsWith('aa') ? 'AA' : 'AAA';
+                                                    const sc = tag.match(/\d+\.\d+\.\d+/)?.[0] || '';
+                                                    return `SC ${sc} Level ${level}`;
+                                                  })
+                                                  .join(', ')}
+                                            </Typography>
+                                            <Typography variant="subtitle2" gutterBottom>
+                                              AXE Core Check:
+                                            </Typography>
+                                            <Typography paragraph>
+                                              {pass.id}
+                                            </Typography>
+                                            <Typography variant="subtitle2" gutterBottom>
+                                              Description:
+                                            </Typography>
+                                            <Typography>
+                                              {pass.description}
+                                            </Typography>
+                                          </AccordionDetails>
+                                        </Accordion>
+                                      ))}
                                     </AccordionDetails>
                                   </Accordion>
 
@@ -777,32 +806,55 @@ export default function Home() {
                                       </Typography>
                                     </AccordionSummary>
                                     <AccordionDetails>
-                                      <List>
-                                        {result.accessibilityResults.incomplete.map((incomplete, iIndex) => (
-                                          <ListItem key={iIndex}>
-                                            <ListItemText
-                                              primary={
-                                                <Box>
-                                                  <Typography>{WCAG_MAPPING[incomplete.id]?.name || incomplete.id}</Typography>
-                                                  <Typography variant="body2" color="text.secondary">
-                                                    {WCAG_MAPPING[incomplete.id]
-                                                      ? `SC ${WCAG_MAPPING[incomplete.id].sc} ${WCAG_MAPPING[incomplete.id].name} (Level ${WCAG_MAPPING[incomplete.id].level})`
-                                                      : incomplete.tags
-                                                          .filter(tag => tag.startsWith('wcag2'))
-                                                          .map(tag => {
-                                                            const level = tag.endsWith('a') ? 'A' : tag.endsWith('aa') ? 'AA' : 'AAA';
-                                                            const sc = tag.match(/\d+\.\d+\.\d+/)?.[0] || '';
-                                                            return `SC ${sc} Level ${level}`;
-                                                          })
-                                                          .join(', ')}
-                                                  </Typography>
-                                                </Box>
-                                              }
-                                              secondary={incomplete.description}
-                                            />
-                                          </ListItem>
-                                        ))}
-                                      </List>
+                                      {result.accessibilityResults.incomplete.map((incomplete, iIndex) => (
+                                        <Accordion 
+                                          key={iIndex}
+                                          defaultExpanded={false}
+                                          sx={{
+                                            '&.Mui-expanded': {
+                                              backgroundColor: 'rgba(237, 108, 2, 0.04)',
+                                              borderLeft: '2px solid #ed6c02',
+                                            },
+                                          }}
+                                        >
+                                          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                                            <Typography>
+                                              {WCAG_MAPPING[incomplete.id] ? 
+                                                `SC ${WCAG_MAPPING[incomplete.id].sc} ${WCAG_MAPPING[incomplete.id].name}` :
+                                                incomplete.id}
+                                            </Typography>
+                                          </AccordionSummary>
+                                          <AccordionDetails>
+                                            <Typography variant="subtitle2" gutterBottom>
+                                              WCAG Success Criterion:
+                                            </Typography>
+                                            <Typography paragraph>
+                                              {WCAG_MAPPING[incomplete.id] ? 
+                                                `SC ${WCAG_MAPPING[incomplete.id].sc} ${WCAG_MAPPING[incomplete.id].name} (Level ${WCAG_MAPPING[incomplete.id].level})` :
+                                                incomplete.tags
+                                                  .filter(tag => tag.startsWith('wcag2'))
+                                                  .map(tag => {
+                                                    const level = tag.endsWith('a') ? 'A' : tag.endsWith('aa') ? 'AA' : 'AAA';
+                                                    const sc = tag.match(/\d+\.\d+\.\d+/)?.[0] || '';
+                                                    return `SC ${sc} Level ${level}`;
+                                                  })
+                                                  .join(', ')}
+                                            </Typography>
+                                            <Typography variant="subtitle2" gutterBottom>
+                                              AXE Core Check:
+                                            </Typography>
+                                            <Typography paragraph>
+                                              {incomplete.id}
+                                            </Typography>
+                                            <Typography variant="subtitle2" gutterBottom>
+                                              Description:
+                                            </Typography>
+                                            <Typography>
+                                              {incomplete.description}
+                                            </Typography>
+                                          </AccordionDetails>
+                                        </Accordion>
+                                      ))}
                                     </AccordionDetails>
                                   </Accordion>
 
@@ -822,32 +874,55 @@ export default function Home() {
                                       </Typography>
                                     </AccordionSummary>
                                     <AccordionDetails>
-                                      <List>
-                                        {result.accessibilityResults.nonApplicable?.map((nonApplicable, nIndex) => (
-                                          <ListItem key={nIndex}>
-                                            <ListItemText
-                                              primary={
-                                                <Box>
-                                                  <Typography>{WCAG_MAPPING[nonApplicable.id]?.name || nonApplicable.id}</Typography>
-                                                  <Typography variant="body2" color="text.secondary">
-                                                    {WCAG_MAPPING[nonApplicable.id]
-                                                      ? `SC ${WCAG_MAPPING[nonApplicable.id].sc} ${WCAG_MAPPING[nonApplicable.id].name} (Level ${WCAG_MAPPING[nonApplicable.id].level})`
-                                                      : nonApplicable.tags
-                                                          .filter(tag => tag.startsWith('wcag2'))
-                                                          .map(tag => {
-                                                            const level = tag.endsWith('a') ? 'A' : tag.endsWith('aa') ? 'AA' : 'AAA';
-                                                            const sc = tag.match(/\d+\.\d+\.\d+/)?.[0] || '';
-                                                            return `SC ${sc} Level ${level}`;
-                                                          })
-                                                          .join(', ')}
-                                                  </Typography>
-                                                </Box>
-                                              }
-                                              secondary={nonApplicable.description}
-                                            />
-                                          </ListItem>
-                                        ))}
-                                      </List>
+                                      {result.accessibilityResults.nonApplicable?.map((nonApplicable, nIndex) => (
+                                        <Accordion 
+                                          key={nIndex}
+                                          defaultExpanded={false}
+                                          sx={{
+                                            '&.Mui-expanded': {
+                                              backgroundColor: 'rgba(156, 39, 176, 0.04)',
+                                              borderLeft: '2px solid #9c27b0',
+                                            },
+                                          }}
+                                        >
+                                          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                                            <Typography>
+                                              {WCAG_MAPPING[nonApplicable.id] ? 
+                                                `SC ${WCAG_MAPPING[nonApplicable.id].sc} ${WCAG_MAPPING[nonApplicable.id].name}` :
+                                                nonApplicable.id}
+                                            </Typography>
+                                          </AccordionSummary>
+                                          <AccordionDetails>
+                                            <Typography variant="subtitle2" gutterBottom>
+                                              WCAG Success Criterion:
+                                            </Typography>
+                                            <Typography paragraph>
+                                              {WCAG_MAPPING[nonApplicable.id] ? 
+                                                `SC ${WCAG_MAPPING[nonApplicable.id].sc} ${WCAG_MAPPING[nonApplicable.id].name} (Level ${WCAG_MAPPING[nonApplicable.id].level})` :
+                                                nonApplicable.tags
+                                                  .filter(tag => tag.startsWith('wcag2'))
+                                                  .map(tag => {
+                                                    const level = tag.endsWith('a') ? 'A' : tag.endsWith('aa') ? 'AA' : 'AAA';
+                                                    const sc = tag.match(/\d+\.\d+\.\d+/)?.[0] || '';
+                                                    return `SC ${sc} Level ${level}`;
+                                                  })
+                                                  .join(', ')}
+                                            </Typography>
+                                            <Typography variant="subtitle2" gutterBottom>
+                                              AXE Core Check:
+                                            </Typography>
+                                            <Typography paragraph>
+                                              {nonApplicable.id}
+                                            </Typography>
+                                            <Typography variant="subtitle2" gutterBottom>
+                                              Description:
+                                            </Typography>
+                                            <Typography>
+                                              {nonApplicable.description}
+                                            </Typography>
+                                          </AccordionDetails>
+                                        </Accordion>
+                                      ))}
                                     </AccordionDetails>
                                   </Accordion>
                                 </Box>
