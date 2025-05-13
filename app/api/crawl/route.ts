@@ -78,6 +78,20 @@ interface CrawlResponse {
 let browserPool: Browser[] = [];
 const MAX_BROWSER_INSTANCES = 3;
 
+// Add debug flag at the top of the file
+const DEBUG = false;
+
+// Helper function for logging
+function log(message: string, data?: any) {
+  if (DEBUG) {
+    if (data) {
+      console.log(message, data);
+    } else {
+      console.log(message);
+    }
+  }
+}
+
 async function getBrowser(): Promise<Browser> {
   if (browserPool.length < MAX_BROWSER_INSTANCES) {
     const browser = await puppeteer.launch({ 
@@ -466,9 +480,9 @@ async function crawlPage(
   checkAccessibility: boolean,
   wcagLevels: { A: boolean; AA: boolean; AAA: boolean }
 ): Promise<CrawlResult> {
-  console.log(`Starting crawl of ${url}`);
+  log(`Starting crawl of ${url}`);
   if (visited.has(url)) {
-    console.log(`URL ${url} already visited, skipping`);
+    log(`URL ${url} already visited, skipping`);
     return { url, links: [] };
   }
   
@@ -505,7 +519,7 @@ async function crawlPage(
     });
 
     // Set a longer timeout and wait until network is idle
-    console.log(`Navigating to ${url}`);
+    log(`Navigating to ${url}`);
     const response = await page.goto(url, { 
       waitUntil: 'networkidle0',
       timeout: 60000 // 60 seconds
@@ -684,7 +698,7 @@ async function crawlPage(
 }
 
 export async function POST(request: Request) {
-  console.log('Received crawl request');
+  log('Received crawl request');
   const encoder = new TextEncoder();
   const stream = new TransformStream();
   const writer = stream.writable.getWriter();
@@ -693,7 +707,7 @@ export async function POST(request: Request) {
   const writeResponse = async (data: any) => {
     if (!isClientConnected) return;
     try {
-      console.log('Writing response:', JSON.stringify(data));
+      log('Writing response:', JSON.stringify(data));
       await writer.write(encoder.encode(JSON.stringify(data) + '\n'));
     } catch (error) {
       console.error('Error writing response:', error);
@@ -705,7 +719,7 @@ export async function POST(request: Request) {
   const closeWriter = async () => {
     if (!isClientConnected) return;
     try {
-      console.log('Closing writer');
+      log('Closing writer');
       await writer.close();
     } catch (error) {
       console.error('Error closing writer:', error);
@@ -714,7 +728,7 @@ export async function POST(request: Request) {
 
   (async () => {
     try {
-      console.log('Parsing request body');
+      log('Parsing request body');
       const { url, takeScreenshots, crawlEntireWebsite, checkAccessibility, wcagLevels }: CrawlRequest = await request.json();
       
       if (!url) {
@@ -724,12 +738,12 @@ export async function POST(request: Request) {
         return;
       }
 
-      console.log(`Starting crawl for URL: ${url}`);
-      console.log('Options:', { takeScreenshots, crawlEntireWebsite, checkAccessibility, wcagLevels });
+      log(`Starting crawl for URL: ${url}`);
+      log('Options:', { takeScreenshots, crawlEntireWebsite, checkAccessibility, wcagLevels });
 
       // Clean up old screenshots before starting new scan
       if (takeScreenshots) {
-        console.log('Cleaning up old screenshots');
+        log('Cleaning up old screenshots');
         await cleanupScreenshots();
       }
       
@@ -740,22 +754,22 @@ export async function POST(request: Request) {
       
       try {
         if (crawlEntireWebsite) {
-          console.log('Starting full website crawl');
+          log('Starting full website crawl');
           const sitemapUrls = await getSitemapUrls(baseUrl);
           usedSitemap = sitemapUrls.length > 0;
-          console.log(`Sitemap found: ${usedSitemap}, URLs to crawl: ${sitemapUrls.length}`);
+          log(`Sitemap found: ${usedSitemap}, URLs to crawl: ${sitemapUrls.length}`);
           const urlsToCrawl = sitemapUrls.length > 0 ? sitemapUrls : [url];
           
           // Process URLs in parallel with a concurrency limit
           const concurrencyLimit = 3;
           for (let i = 0; i < urlsToCrawl.length; i += concurrencyLimit) {
             if (!isClientConnected) {
-              console.log('Client disconnected, stopping crawl');
+              log('Client disconnected, stopping crawl');
               break;
             }
             
             const batch = urlsToCrawl.slice(i, i + concurrencyLimit);
-            console.log(`Processing batch of ${batch.length} URLs`);
+            log(`Processing batch of ${batch.length} URLs`);
             const batchResults = await Promise.all(
               batch.map(urlToCrawl => 
                 !visited.has(urlToCrawl) ? crawlPage(urlToCrawl, takeScreenshots, visited, baseUrl, true, checkAccessibility, wcagLevels) : null
@@ -763,7 +777,7 @@ export async function POST(request: Request) {
             );
             
             results.push(...batchResults.filter((r): r is CrawlResult => r !== null));
-            console.log(`Completed batch, total results: ${results.length}`);
+            log(`Completed batch, total results: ${results.length}`);
             
             // Send intermediate results
             await writeResponse({
@@ -786,15 +800,15 @@ export async function POST(request: Request) {
                 }
               });
               
-              console.log(`Found ${newLinks.size} new links to crawl`);
+              log(`Found ${newLinks.size} new links to crawl`);
               // Process new links with delay
               for (const link of Array.from(newLinks)) {
                 if (!isClientConnected) {
-                  console.log('Client disconnected, stopping crawl');
+                  log('Client disconnected, stopping crawl');
                   break;
                 }
                 await delay(1000);
-                console.log(`Crawling new link: ${link}`);
+                log(`Crawling new link: ${link}`);
                 const subResult = await crawlPage(link, takeScreenshots, visited, baseUrl, true, checkAccessibility, wcagLevels);
                 results.push(subResult);
                 
@@ -808,7 +822,7 @@ export async function POST(request: Request) {
             }
           }
         } else {
-          console.log('Starting single page crawl');
+          log('Starting single page crawl');
           // Single page crawl
           const result = await crawlPage(url, takeScreenshots, visited, baseUrl, false, checkAccessibility, wcagLevels);
           results.push(result);
@@ -822,7 +836,7 @@ export async function POST(request: Request) {
         }
         
         if (isClientConnected) {
-          console.log('Crawl completed, sending final results');
+          log('Crawl completed, sending final results');
           // Send final results
           await writeResponse({
             results,
@@ -833,7 +847,7 @@ export async function POST(request: Request) {
         }
       } catch (error) {
         if (error instanceof Error && error.name === 'AbortError') {
-          console.log('Crawl cancelled by client');
+          log('Crawl cancelled by client');
         } else {
           console.error('Error during crawl:', error);
           await writeResponse({
@@ -841,7 +855,7 @@ export async function POST(request: Request) {
           });
         }
       } finally {
-        console.log('Cleaning up resources');
+        log('Cleaning up resources');
         // Clean up browser instances
         await closeAllBrowsers();
         await closeWriter();
@@ -856,7 +870,7 @@ export async function POST(request: Request) {
         console.error('Error sending error response:', e);
         // Client disconnected
       } finally {
-        console.log('Cleaning up resources after error');
+        log('Cleaning up resources after error');
         // Ensure browsers are closed even on error
         await closeAllBrowsers();
         await closeWriter();
