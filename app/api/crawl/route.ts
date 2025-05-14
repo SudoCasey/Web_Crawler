@@ -18,6 +18,8 @@ interface CrawlRequest {
     AA: boolean;
     AAA: boolean;
   };
+  increaseTimeout: boolean;
+  slowRateLimit: boolean;
 }
 
 interface CrawlResult {
@@ -126,13 +128,12 @@ async function getBrowser(): Promise<Browser> {
         '--window-size=1920,1080'
       ],
       ignoreHTTPSErrors: true,
-      timeout: 60000, // Increase timeout to 60 seconds
-      protocolTimeout: 60000 // Increase protocol timeout to 60 seconds
+      timeout: 60000,
+      protocolTimeout: 60000
     });
     browserPool.push(browser);
     return browser;
   }
-  // Round-robin browser selection
   return browserPool[browserPool.length % MAX_BROWSER_INSTANCES];
 }
 
@@ -298,7 +299,7 @@ async function cleanupTempDir(tempDir: string) {
   }
 }
 
-async function runAccessibilityCheckOnLocalCopy(page: Page, tempDir: string): Promise<{
+async function runAccessibilityCheckOnLocalCopy(page: Page, tempDir: string, wcagLevels: { A: boolean; AA: boolean; AAA: boolean }): Promise<{
   violations: any[];
   passes: any[];
   incomplete: any[];
@@ -464,20 +465,37 @@ async function runAccessibilityCheckOnLocalCopy(page: Page, tempDir: string): Pr
         )
       ]);
 
-      // Map inapplicable results to nonApplicable
-      const nonApplicable = results.inapplicable.map(result => ({
-        id: result.id,
-        impact: result.impact,
-        description: result.description,
-        help: result.help,
-        helpUrl: result.helpUrl,
-        tags: result.tags
-      }));
+      // Filter results based on WCAG levels
+      const filterByWcagLevel = (result: any) => {
+        const tags = result.tags || [];
+        const wcagTags = tags.filter((tag: string) => tag.startsWith('wcag2'));
+        
+        if (wcagTags.length === 0) return true; // Include results without WCAG tags
+        
+        return wcagTags.some((tag: string) => {
+          if (tag.endsWith('a') && wcagLevels.A) return true;
+          if (tag.endsWith('aa') && wcagLevels.AA) return true;
+          if (tag.endsWith('aaa') && wcagLevels.AAA) return true;
+          return false;
+        });
+      };
+
+      // Map inapplicable results to nonApplicable and filter
+      const nonApplicable = results.inapplicable
+        .filter(filterByWcagLevel)
+        .map(result => ({
+          id: result.id,
+          impact: result.impact,
+          description: result.description,
+          help: result.help,
+          helpUrl: result.helpUrl,
+          tags: result.tags
+        }));
 
       return {
-        violations: results.violations,
-        passes: results.passes,
-        incomplete: results.incomplete,
+        violations: results.violations.filter(filterByWcagLevel),
+        passes: results.passes.filter(filterByWcagLevel),
+        incomplete: results.incomplete.filter(filterByWcagLevel),
         nonApplicable
       };
     } finally {
@@ -499,6 +517,22 @@ async function runAccessibilityCheckOnLocalCopy(page: Page, tempDir: string): Pr
   }
 }
 
+// Add common user agents
+const USER_AGENTS = [
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Safari/605.1.15'
+];
+
+// Add blocked sites detection
+const BLOCKED_SITES = new Set([
+  'reddit.com',
+  'www.reddit.com',
+  'udemy.com',
+  'www.udemy.com'
+]);
+
 async function crawlPage(
   url: string,
   takeScreenshots: boolean,
@@ -506,9 +540,22 @@ async function crawlPage(
   baseUrl: string,
   collectLinks: boolean,
   checkAccessibility: boolean,
-  wcagLevels: { A: boolean; AA: boolean; AAA: boolean }
+  wcagLevels: { A: boolean; AA: boolean; AAA: boolean },
+  increaseTimeout: boolean,
+  slowRateLimit: boolean
 ): Promise<CrawlResult> {
   log(`Starting crawl of ${url}`);
+  
+  // Check if site is known to block crawlers
+  const urlObj = new URL(url);
+  if (BLOCKED_SITES.has(urlObj.hostname)) {
+    return {
+      url,
+      links: [],
+      error: `This website (${urlObj.hostname}) is known to block web crawlers. Please use their official API or contact them for access.`
+    };
+  }
+
   if (visited.has(url)) {
     log(`URL ${url} already visited, skipping`);
     return { url, links: [] };
@@ -520,9 +567,14 @@ async function crawlPage(
   let pageClosed = false;
   
   try {
-    // Set longer timeouts
-    await page.setDefaultTimeout(60000);
-    await page.setDefaultNavigationTimeout(60000);
+    // Set timeouts based on the increaseTimeout option
+    const timeout = increaseTimeout ? 120000 : 60000; // 120 seconds if increased, 60 seconds default
+    await page.setDefaultTimeout(timeout);
+    await page.setDefaultNavigationTimeout(timeout);
+    
+    // Set a random user agent
+    const userAgent = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+    await page.setUserAgent(userAgent);
     
     // Configure page to handle redirects and dialogs
     await page.setRequestInterception(true);
@@ -536,7 +588,8 @@ async function crawlPage(
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.5',
         'Cache-Control': 'no-cache',
-        'Pragma': 'no-cache'
+        'Pragma': 'no-cache',
+        'User-Agent': userAgent
       };
       request.continue({ headers });
     });
@@ -550,12 +603,30 @@ async function crawlPage(
     log(`Navigating to ${url}`);
     const response = await page.goto(url, { 
       waitUntil: 'networkidle0',
-      timeout: 60000 // 60 seconds
+      timeout
     });
 
     // Handle various HTTP status codes
     const status = response?.status();
     if (status) {
+      if (status === 403) {
+        await page.close();
+        pageClosed = true;
+        return {
+          url,
+          links: [],
+          error: 'Access forbidden (403). This website is blocking web crawlers. Please use their official API or contact them for access.'
+        };
+      }
+      if (status === 429) {
+        await page.close();
+        pageClosed = true;
+        return {
+          url,
+          links: [],
+          error: 'Too many requests (429). This website is rate limiting access. Please try again later.'
+        };
+      }
       if (status === 304) {
         await page.close();
         pageClosed = true;
@@ -592,6 +663,26 @@ async function crawlPage(
           error: `HTTP Error ${status}`
         };
       }
+    }
+
+    // Check for common anti-bot measures
+    const isBlocked = await page.evaluate(() => {
+      // Check for common anti-bot elements
+      const hasCaptcha = document.querySelector('form[action*="captcha"]') !== null;
+      const hasCloudflare = document.querySelector('#cf-please-wait') !== null;
+      const hasBotDetection = document.querySelector('form[action*="bot"]') !== null;
+      
+      return hasCaptcha || hasCloudflare || hasBotDetection;
+    });
+
+    if (isBlocked) {
+      await page.close();
+      pageClosed = true;
+      return {
+        url,
+        links: [],
+        error: 'This website has detected automated access and is blocking the crawler. Please use their official API or contact them for access.'
+      };
     }
 
     // Wait for the page to be fully loaded
@@ -654,7 +745,7 @@ async function crawlPage(
         
         try {
           // Run accessibility check on the local copy
-          accessibilityResults = await runAccessibilityCheckOnLocalCopy(page, tempDir);
+          accessibilityResults = await runAccessibilityCheckOnLocalCopy(page, tempDir, wcagLevels);
         } finally {
           // Clean up the temporary directory
           await cleanupTempDir(tempDir);
@@ -675,6 +766,11 @@ async function crawlPage(
     if (!pageClosed) {
       await page.close();
       pageClosed = true;
+    }
+    
+    // If slowRateLimit is enabled, add a delay between requests
+    if (slowRateLimit) {
+      await delay(2000); // 2 second delay between requests
     }
     
     return {
@@ -757,7 +853,15 @@ export async function POST(request: Request) {
   (async () => {
     try {
       log('Parsing request body');
-      const { url, takeScreenshots, crawlEntireWebsite, checkAccessibility, wcagLevels }: CrawlRequest = await request.json();
+      const { 
+        url, 
+        takeScreenshots, 
+        crawlEntireWebsite, 
+        checkAccessibility, 
+        wcagLevels,
+        increaseTimeout,
+        slowRateLimit 
+      }: CrawlRequest = await request.json();
       
       if (!url) {
         console.error('No URL provided');
@@ -767,7 +871,14 @@ export async function POST(request: Request) {
       }
 
       log(`Starting crawl for URL: ${url}`);
-      log('Options:', { takeScreenshots, crawlEntireWebsite, checkAccessibility, wcagLevels });
+      log('Options:', { 
+        takeScreenshots, 
+        crawlEntireWebsite, 
+        checkAccessibility, 
+        wcagLevels,
+        increaseTimeout,
+        slowRateLimit 
+      });
 
       // Clean up old screenshots before starting new scan
       if (takeScreenshots) {
@@ -800,7 +911,7 @@ export async function POST(request: Request) {
             log(`Processing batch of ${batch.length} URLs`);
             const batchResults = await Promise.all(
               batch.map(urlToCrawl => 
-                !visited.has(urlToCrawl) ? crawlPage(urlToCrawl, takeScreenshots, visited, baseUrl, true, checkAccessibility, wcagLevels) : null
+                !visited.has(urlToCrawl) ? crawlPage(urlToCrawl, takeScreenshots, visited, baseUrl, true, checkAccessibility, wcagLevels, increaseTimeout, slowRateLimit) : null
               )
             );
             
@@ -837,7 +948,7 @@ export async function POST(request: Request) {
                 }
                 await delay(1000);
                 log(`Crawling new link: ${link}`);
-                const subResult = await crawlPage(link, takeScreenshots, visited, baseUrl, true, checkAccessibility, wcagLevels);
+                const subResult = await crawlPage(link, takeScreenshots, visited, baseUrl, true, checkAccessibility, wcagLevels, increaseTimeout, slowRateLimit);
                 results.push(subResult);
                 
                 await writeResponse({
@@ -852,7 +963,17 @@ export async function POST(request: Request) {
         } else {
           log('Starting single page crawl');
           // Single page crawl
-          const result = await crawlPage(url, takeScreenshots, visited, baseUrl, false, checkAccessibility, wcagLevels);
+          const result = await crawlPage(
+            url, 
+            takeScreenshots, 
+            visited, 
+            baseUrl, 
+            false, 
+            checkAccessibility, 
+            wcagLevels,
+            increaseTimeout,
+            slowRateLimit
+          );
           results.push(result);
           
           await writeResponse({

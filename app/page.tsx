@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   Container,
   TextField,
@@ -20,10 +20,17 @@ import {
   ListItemText,
   Divider,
   Snackbar,
+  Drawer,
+  ToggleButton,
+  ToggleButtonGroup,
+  IconButton,
+  Switch,
 } from '@mui/material';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import SettingsIcon from '@mui/icons-material/Settings';
+import CloseIcon from '@mui/icons-material/Close';
 
 // WCAG 2.2 Success Criterion mapping
 const WCAG_MAPPING: { [key: string]: { name: string; sc: string; level: 'A' | 'AA' | 'AAA'; url: string } } = {
@@ -218,20 +225,142 @@ export default function Home() {
   const [takeScreenshots, setTakeScreenshots] = useState(false);
   const [crawlEntireWebsite, setCrawlEntireWebsite] = useState(false);
   const [checkAccessibility, setCheckAccessibility] = useState(false);
+  const [wcagLevel, setWcagLevel] = useState<'X' | 'A' | 'AA' | 'AAA'>('X');
   const [showLinkDiscovery, setShowLinkDiscovery] = useState(false);
-  const [wcagLevelA, setWcagLevelA] = useState(true);
-  const [wcagLevelAA, setWcagLevelAA] = useState(true);
-  const [wcagLevelAAA, setWcagLevelAAA] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [showCompletion, setShowCompletion] = useState(false);
   const [isCrawlComplete, setIsCrawlComplete] = useState(false);
   const [isCrawlCancelled, setIsCrawlCancelled] = useState(false);
-  const [elapsed, setElapsed] = useState<number>(0);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const startTimeRef = useRef<number | null>(null);
+  const [elapsedTime, setElapsedTime] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [increaseTimeout, setIncreaseTimeout] = useState(false);
+  const [slowRateLimit, setSlowRateLimit] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const startTimeRef = useRef<number | null>(null);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
+  const handleScreenshotsChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    setTakeScreenshots(event.target.checked);
+  }, []);
+
+  const handleFullCrawlChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    setCrawlEntireWebsite(event.target.checked);
+  }, []);
+
+  const handleWcagLevelChange = useCallback((event: React.MouseEvent<HTMLElement>, newLevel: 'X' | 'A' | 'AA' | 'AAA' | null) => {
+    if (newLevel !== null) {
+      setWcagLevel(newLevel);
+    }
+  }, []);
+
+  const handleShowLinkDiscoveryChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    setShowLinkDiscovery(event.target.checked);
+  }, []);
+
+  const handleIncreaseTimeoutChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    setIncreaseTimeout(event.target.checked);
+  }, []);
+
+  const handleSlowRateLimitChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    setSlowRateLimit(event.target.checked);
+  }, []);
+
+  const OptionsRow = useMemo(() => (
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 4, mb: 2 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Typography variant="body1" sx={{ whiteSpace: 'nowrap' }}>
+          Screenshots:
+        </Typography>
+        <Switch
+          checked={takeScreenshots}
+          onChange={handleScreenshotsChange}
+          aria-label="Take screenshots"
+          size="small"
+        />
+      </Box>
+
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Typography variant="body1" sx={{ whiteSpace: 'nowrap' }}>
+          Full Crawl:
+        </Typography>
+        <Switch
+          checked={crawlEntireWebsite}
+          onChange={handleFullCrawlChange}
+          aria-label="Crawl entire website"
+          size="small"
+        />
+      </Box>
+
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Typography variant="body1" sx={{ whiteSpace: 'nowrap' }}>
+          WCAG Check:
+        </Typography>
+        <ToggleButtonGroup
+          value={wcagLevel}
+          exclusive
+          onChange={handleWcagLevelChange}
+          aria-label="WCAG Accessibility check level"
+          size="small"
+        >
+          <ToggleButton value="X" aria-label="No accessibility check">
+            <CloseIcon />
+          </ToggleButton>
+          <ToggleButton value="A" aria-label="Single-A">
+            A
+          </ToggleButton>
+          <ToggleButton value="AA" aria-label="Double-A">
+            AA
+          </ToggleButton>
+          <ToggleButton value="AAA" aria-label="Triple-A">
+            AAA
+          </ToggleButton>
+        </ToggleButtonGroup>
+      </Box>
+    </Box>
+  ), [takeScreenshots, crawlEntireWebsite, wcagLevel, handleScreenshotsChange, handleFullCrawlChange, handleWcagLevelChange]);
+
+  const AdvancedSettings = useMemo(() => (
+    <Box sx={{ width: 300, p: 3 }}>
+      <Typography variant="h6" gutterBottom>
+        Advanced Settings
+      </Typography>
+      
+      <FormControlLabel
+        control={
+          <Checkbox
+            checked={showLinkDiscovery}
+            onChange={handleShowLinkDiscoveryChange}
+          />
+        }
+        label="Show link discovery information"
+        sx={{ mb: 1 }}
+      />
+
+      <FormControlLabel
+        control={
+          <Checkbox
+            checked={increaseTimeout}
+            onChange={handleIncreaseTimeoutChange}
+          />
+        }
+        label="Increase timeout for slow sites"
+        sx={{ mb: 1 }}
+      />
+
+      <FormControlLabel
+        control={
+          <Checkbox
+            checked={slowRateLimit}
+            onChange={handleSlowRateLimitChange}
+          />
+        }
+        label="Slow down rate limiting"
+        sx={{ mb: 1 }}
+      />
+    </Box>
+  ), [showLinkDiscovery, increaseTimeout, slowRateLimit, handleShowLinkDiscoveryChange, handleIncreaseTimeoutChange, handleSlowRateLimitChange]);
 
   const TimerDisplay = React.memo(({ isLoading, elapsed, formatTime }: TimerDisplayProps) => {
     if (!isLoading && elapsed === 0) return null;
@@ -269,10 +398,10 @@ export default function Home() {
   const startTimer = () => {
     stopTimer(); // Ensure any existing timer is stopped first
     startTimeRef.current = Date.now();
-    setElapsed(0);
+    setElapsedTime(0);
     timerRef.current = setInterval(() => {
       if (startTimeRef.current) {
-        setElapsed(Math.floor((Date.now() - startTimeRef.current) / 1000));
+        setElapsedTime(Math.floor((Date.now() - startTimeRef.current) / 1000));
       }
     }, 1000);
   };
@@ -295,7 +424,7 @@ export default function Home() {
     stopTimer();
     if (startTimeRef.current) {
       const finalElapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
-      setElapsed(finalElapsed);
+      setElapsedTime(finalElapsed);
       startTimeRef.current = null;
     }
     setIsCrawlComplete(true);
@@ -303,16 +432,17 @@ export default function Home() {
   };
 
   const handleCrawl = async () => {
-    if (!url) return;
+    if (!url) {
+      setError('Please enter a URL');
+      return;
+    }
 
     setIsLoading(true);
+    setError(null);
     setScanResult(null);
-    setShowCompletion(false);
-    setIsCrawlComplete(false);
-    setIsCrawlCancelled(false);
+    setElapsedTime(0);
+    startTimeRef.current = Date.now();
     startTimer();
-
-    // Create new AbortController for this crawl
     abortControllerRef.current = new AbortController();
 
     try {
@@ -325,14 +455,16 @@ export default function Home() {
           url,
           takeScreenshots,
           crawlEntireWebsite,
-          checkAccessibility,
+          checkAccessibility: wcagLevel !== 'X',
           wcagLevels: {
-            A: wcagLevelA,
-            AA: wcagLevelAA,
-            AAA: wcagLevelAAA,
+            A: wcagLevel === 'A' || wcagLevel === 'AA' || wcagLevel === 'AAA',
+            AA: wcagLevel === 'AA' || wcagLevel === 'AAA',
+            AAA: wcagLevel === 'AAA'
           },
+          increaseTimeout,
+          slowRateLimit
         }),
-        signal: abortControllerRef.current.signal,
+        signal: abortControllerRef.current.signal
       });
 
       if (!response.ok) {
@@ -372,7 +504,7 @@ export default function Home() {
               if (data.isComplete) {
                 if (startTimeRef.current) {
                   const finalElapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
-                  setElapsed(finalElapsed);
+                  setElapsedTime(finalElapsed);
                   startTimeRef.current = null;
                 }
                 stopTimer();
@@ -417,9 +549,14 @@ export default function Home() {
       <CssBaseline />
       <Container maxWidth="md" sx={{ py: 4 }}>
         <Paper elevation={3} sx={{ p: 4 }}>
-          <Typography variant="h4" component="h1" gutterBottom>
-            Web Crawler
-          </Typography>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+            <Typography variant="h4" component="h1">
+              Web Crawler
+            </Typography>
+            <IconButton onClick={() => setIsDrawerOpen(true)}>
+              <SettingsIcon />
+            </IconButton>
+          </Box>
 
           <Box component="form" sx={{ mb: 4 }}>
             <TextField
@@ -431,100 +568,25 @@ export default function Home() {
               sx={{ mb: 2 }}
             />
 
-            <FormControlLabel
-              control={
-                <Checkbox
-                  checked={takeScreenshots}
-                  onChange={(e) => setTakeScreenshots(e.target.checked)}
-                />
-              }
-              label="Take screenshots"
-              sx={{ mb: 1 }}
-            />
-
-            <FormControlLabel
-              control={
-                <Checkbox
-                  checked={showLinkDiscovery}
-                  onChange={(e) => setShowLinkDiscovery(e.target.checked)}
-                />
-              }
-              label="Show link discovery information"
-              sx={{ mb: 1 }}
-            />
-
-            <FormControlLabel
-              control={
-                <Checkbox
-                  checked={crawlEntireWebsite}
-                  onChange={(e) => setCrawlEntireWebsite(e.target.checked)}
-                />
-              }
-              label="Crawl entire website"
-              sx={{ mb: 1 }}
-            />
-
-            <FormControlLabel
-              control={
-                <Checkbox
-                  checked={checkAccessibility}
-                  onChange={(e) => setCheckAccessibility(e.target.checked)}
-                />
-              }
-              label="Check WCAG Accessibility"
-              sx={{ mb: 1 }}
-            />
-
-            {checkAccessibility && (
-              <Box sx={{ ml: 4, mb: 2 }}>
-                <FormControlLabel
-                  control={
-                    <Checkbox
-                      checked={wcagLevelA}
-                      onChange={(e) => setWcagLevelA(e.target.checked)}
-                    />
-                  }
-                  label="Level A"
-                />
-                <FormControlLabel
-                  control={
-                    <Checkbox
-                      checked={wcagLevelAA}
-                      onChange={(e) => setWcagLevelAA(e.target.checked)}
-                    />
-                  }
-                  label="Level AA"
-                />
-                <FormControlLabel
-                  control={
-                    <Checkbox
-                      checked={wcagLevelAAA}
-                      onChange={(e) => setWcagLevelAAA(e.target.checked)}
-                    />
-                  }
-                  label="Level AAA"
-                />
-              </Box>
-            )}
+            {OptionsRow}
 
             <Box sx={{ display: 'flex', gap: 2 }}>
               <Button
                 variant="contained"
                 onClick={handleCrawl}
-                disabled={isLoading || !url}
-                fullWidth
+                disabled={isLoading}
+                sx={{ flex: 1 }}
               >
-                {isLoading ? <CircularProgress size={24} /> : 'Crawl'}
+                {isLoading ? 'Crawling...' : 'Start Crawl'}
               </Button>
-              
               {isLoading && (
                 <Button
                   variant="outlined"
                   color="error"
                   onClick={handleCancel}
-                  fullWidth
+                  sx={{ flex: 1 }}
                 >
-                  Cancel
+                  Cancel Scan
                 </Button>
               )}
             </Box>
@@ -532,7 +594,7 @@ export default function Home() {
 
           <TimerDisplay 
             isLoading={isLoading}
-            elapsed={elapsed}
+            elapsed={elapsedTime}
             formatTime={formatTime}
           />
 
@@ -633,89 +695,108 @@ export default function Home() {
                                             </Typography>
                                           </AccordionSummary>
                                           <AccordionDetails>
-                                            <Typography component="h6" variant="subtitle2" gutterBottom>
-                                              WCAG Success Criterion:
-                                            </Typography>
-                                            <Typography paragraph>
-                                              {WCAG_MAPPING[violation.id] ? 
-                                                `SC ${WCAG_MAPPING[violation.id].sc} ${WCAG_MAPPING[violation.id].name} (Level ${WCAG_MAPPING[violation.id].level})` :
-                                                violation.tags
-                                                  .filter(tag => tag.startsWith('wcag2'))
-                                                  .map(tag => {
-                                                    const level = tag.endsWith('a') ? 'A' : tag.endsWith('aa') ? 'AA' : 'AAA';
-                                                    const sc = tag.match(/\d+\.\d+\.\d+/)?.[0] || '';
-                                                    return `SC ${sc} Level ${level}`;
-                                                  })
-                                                  .join(', ')}
-                                            </Typography>
-                                            <Typography component="h6" variant="subtitle2" gutterBottom>
-                                              AXE Core Check:
-                                            </Typography>
-                                            <Typography paragraph>
-                                              {violation.id}
-                                            </Typography>
-                                            <Typography component="h6" variant="subtitle2" gutterBottom>
-                                              Description:
-                                            </Typography>
-                                            <Typography paragraph>
-                                              {violation.description}
-                                            </Typography>
-                                            <Typography component="h6" variant="subtitle2" gutterBottom>
-                                              Explanation:
-                                            </Typography>
-                                            <Typography paragraph>
-                                              {violation.help}
-                                            </Typography>
-                                            <Typography component="h6" variant="subtitle2" gutterBottom>
-                                              Affected Elements:
-                                            </Typography>
-                                            {violation.nodes.map((node, nIndex) => (
-                                              <Box key={nIndex} sx={{ mb: 2 }}>
-                                                <Typography variant="body2" component="pre" sx={{ 
-                                                  backgroundColor: 'rgba(0, 0, 0, 0.1)',
-                                                  p: 1,
-                                                  borderRadius: 1,
-                                                  overflowX: 'auto',
-                                                  fontFamily: 'monospace',
-                                                  whiteSpace: 'pre-wrap',
-                                                  wordBreak: 'break-word'
-                                                }}>
-                                                  {node.html}
-                                                </Typography>
-                                                <Typography variant="body2" color="error" sx={{ mt: 1 }}>
-                                                  {node.failureSummary}
-                                                </Typography>
-                                              </Box>
-                                            ))}
-                                            <Typography variant="body2">
-                                              <a 
-                                                href={WCAG_MAPPING[violation.id]?.url || `https://www.w3.org/WAI/WCAG22/quickref/?versions=2.2&levels=${violation.tags.find(tag => tag.startsWith('wcag2'))?.toLowerCase() || 'aaa'}&technologies=${violation.id}`}
-                                                target="_blank" 
-                                                rel="noopener noreferrer"
-                                                style={{
-                                                  color: '#90caf9',
-                                                  textDecoration: 'none'
-                                                }}
-                                                onMouseOver={(e) => {
-                                                  e.currentTarget.style.color = '#42a5f5';
-                                                  e.currentTarget.style.textDecoration = 'underline';
-                                                }}
-                                                onMouseOut={(e) => {
-                                                  e.currentTarget.style.color = '#90caf9';
-                                                  e.currentTarget.style.textDecoration = 'none';
-                                                }}
-                                                onFocus={(e) => {
-                                                  e.currentTarget.style.color = '#42a5f5';
-                                                  e.currentTarget.style.textDecoration = 'underline';
-                                                }}
-                                                onBlur={(e) => {
-                                                  e.currentTarget.style.color = '#90caf9';
-                                                  e.currentTarget.style.textDecoration = 'none';
-                                                }}
-                                              >
-                                                View WCAG 2.2 Rule
-                                              </a>
-                                            </Typography>
+                                            <Box sx={{
+                                              maxHeight: violation.nodes.length > 3 ? '600px' : 'none',
+                                              overflowY: violation.nodes.length > 3 ? 'auto' : 'visible',
+                                              '&::-webkit-scrollbar': {
+                                                width: '8px',
+                                              },
+                                              '&::-webkit-scrollbar-track': {
+                                                background: 'rgba(255, 255, 255, 0.1)',
+                                                borderRadius: '4px',
+                                              },
+                                              '&::-webkit-scrollbar-thumb': {
+                                                background: 'rgba(255, 255, 255, 0.2)',
+                                                borderRadius: '4px',
+                                                '&:hover': {
+                                                  background: 'rgba(255, 255, 255, 0.3)',
+                                                },
+                                              },
+                                            }}>
+                                              <Typography component="h6" variant="subtitle2" gutterBottom>
+                                                WCAG Success Criterion:
+                                              </Typography>
+                                              <Typography paragraph>
+                                                {WCAG_MAPPING[violation.id] ? 
+                                                  `SC ${WCAG_MAPPING[violation.id].sc} ${WCAG_MAPPING[violation.id].name} (Level ${WCAG_MAPPING[violation.id].level})` :
+                                                  violation.tags
+                                                    .filter(tag => tag.startsWith('wcag2'))
+                                                    .map(tag => {
+                                                      const level = tag.endsWith('a') ? 'A' : tag.endsWith('aa') ? 'AA' : 'AAA';
+                                                      const sc = tag.match(/\d+\.\d+\.\d+/)?.[0] || '';
+                                                      return `SC ${sc} Level ${level}`;
+                                                    })
+                                                    .join(', ')}
+                                              </Typography>
+                                              <Typography component="h6" variant="subtitle2" gutterBottom>
+                                                AXE Core Check:
+                                              </Typography>
+                                              <Typography paragraph>
+                                                {violation.id}
+                                              </Typography>
+                                              <Typography component="h6" variant="subtitle2" gutterBottom>
+                                                Description:
+                                              </Typography>
+                                              <Typography paragraph>
+                                                {violation.description}
+                                              </Typography>
+                                              <Typography component="h6" variant="subtitle2" gutterBottom>
+                                                Explanation:
+                                              </Typography>
+                                              <Typography paragraph>
+                                                {violation.help}
+                                              </Typography>
+                                              <Typography variant="body2" sx={{ mb: 2 }}>
+                                                <a 
+                                                  href={WCAG_MAPPING[violation.id]?.url || `https://www.w3.org/WAI/WCAG22/quickref/?versions=2.2&levels=${violation.tags.find(tag => tag.startsWith('wcag2'))?.toLowerCase() || 'aaa'}&technologies=${violation.id}`}
+                                                  target="_blank" 
+                                                  rel="noopener noreferrer"
+                                                  style={{
+                                                    color: '#90caf9',
+                                                    textDecoration: 'none'
+                                                  }}
+                                                  onMouseOver={(e) => {
+                                                    e.currentTarget.style.color = '#42a5f5';
+                                                    e.currentTarget.style.textDecoration = 'underline';
+                                                  }}
+                                                  onMouseOut={(e) => {
+                                                    e.currentTarget.style.color = '#90caf9';
+                                                    e.currentTarget.style.textDecoration = 'none';
+                                                  }}
+                                                  onFocus={(e) => {
+                                                    e.currentTarget.style.color = '#42a5f5';
+                                                    e.currentTarget.style.textDecoration = 'underline';
+                                                  }}
+                                                  onBlur={(e) => {
+                                                    e.currentTarget.style.color = '#90caf9';
+                                                    e.currentTarget.style.textDecoration = 'none';
+                                                  }}
+                                                >
+                                                  View WCAG 2.2 Rule
+                                                </a>
+                                              </Typography>
+                                              <Typography component="h6" variant="subtitle2" gutterBottom>
+                                                Affected Elements:
+                                              </Typography>
+                                              {violation.nodes.map((node, nIndex) => (
+                                                <Box key={nIndex} sx={{ mb: 2 }}>
+                                                  <Typography variant="body2" component="pre" sx={{ 
+                                                    backgroundColor: 'rgba(0, 0, 0, 0.1)',
+                                                    p: 1,
+                                                    borderRadius: 1,
+                                                    overflowX: 'auto',
+                                                    fontFamily: 'monospace',
+                                                    whiteSpace: 'pre-wrap',
+                                                    wordBreak: 'break-word'
+                                                  }}>
+                                                    {node.html}
+                                                  </Typography>
+                                                  <Typography variant="body2" color="error" sx={{ mt: 1 }}>
+                                                    {node.failureSummary}
+                                                  </Typography>
+                                                </Box>
+                                              ))}
+                                            </Box>
                                           </AccordionDetails>
                                         </Accordion>
                                       ))}
@@ -984,6 +1065,14 @@ export default function Home() {
             message="Website scan completed!"
           />
         </Paper>
+
+        <Drawer
+          anchor="right"
+          open={isDrawerOpen}
+          onClose={() => setIsDrawerOpen(false)}
+        >
+          {AdvancedSettings}
+        </Drawer>
       </Container>
     </ThemeProvider>
   );
