@@ -25,6 +25,7 @@ import {
   ToggleButtonGroup,
   IconButton,
   Switch,
+  Pagination,
 } from '@mui/material';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
@@ -740,10 +741,10 @@ export default function Home() {
   const [tookScreenshots, setTookScreenshots] = useState(false);
   const [checkedAccessibility, setCheckedAccessibility] = useState(false);
   const [showLinkDiscovery, setShowLinkDiscovery] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const resultsPerPage = 10;
   const abortControllerRef = useRef<AbortController | null>(null);
   const startTimeRef = useRef<number | null>(null);
-  const [elapsed, setElapsed] = useState(0);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   const handleScreenshotsChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     setTakeScreenshots(event.target.checked);
@@ -776,6 +777,16 @@ export default function Home() {
       setConcurrentPages(newValue);
     }
   }, []);
+
+  const handlePageChange = (event: React.ChangeEvent<unknown>, value: number) => {
+    setCurrentPage(value);
+  };
+
+  // Calculate pagination values
+  const indexOfLastResult = currentPage * resultsPerPage;
+  const indexOfFirstResult = indexOfLastResult - resultsPerPage;
+  const currentResults = scanResultArray.slice(indexOfFirstResult, indexOfLastResult);
+  const totalPages = Math.ceil(scanResultArray.length / resultsPerPage);
 
   const OptionsRow = useMemo(() => (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 4, mb: 2 }}>
@@ -919,6 +930,7 @@ export default function Home() {
     setError(null);
     setScanResultMap(new Map());
     setScanResultArray([]);
+    setCurrentPage(1);
     setUsedSitemap(null);
     setTookScreenshots(takeScreenshots);
     setCheckedAccessibility(wcagLevel !== 'X');
@@ -981,7 +993,7 @@ export default function Home() {
                   data.newResults.forEach((result: CrawlResult) => {
                     newMap.set(result.url, result);
                   });
-                  // Update the array for rendering
+                  // Update the array for rendering without resetting the page
                   setScanResultArray(Array.from(newMap.values()));
                   return newMap;
                 });
@@ -1002,7 +1014,6 @@ export default function Home() {
                 setShowCompletion(true);
                 setIsCrawlComplete(true);
                 setIsLoading(false);
-                window.dispatchEvent(new Event('crawl:complete'));
               }
             } catch (e) {
               console.error('Error parsing JSON:', e);
@@ -1107,37 +1118,61 @@ export default function Home() {
                     </Box>
                   </AccordionSummary>
                   <AccordionDetails>
-                    {scanResultArray.map((result, index) => (
+                    {currentResults.map((result) => (
                       <ScannedPageAccordion 
                         key={result.url} 
                         result={result} 
                         showLinkDiscovery={showLinkDiscovery}
                       />
                     ))}
+                    {totalPages > 1 && (
+                      <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
+                        <Pagination 
+                          count={totalPages} 
+                          page={currentPage} 
+                          onChange={handlePageChange}
+                          color="primary"
+                          size="large"
+                        />
+                      </Box>
+                    )}
                   </AccordionDetails>
                 </Accordion>
               ) : (
-                <List>
-                  {scanResultArray.map((result, index) => (
-                    <React.Fragment key={result.url}>
-                      <ListItem>
-                        <ListItemText 
-                          primary={
-                            <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                              <Typography sx={{ wordBreak: 'break-all' }}>{result.url}</Typography>
-                              {result.error && (
-                                <Typography color="error" sx={{ ml: 2 }}>
-                                  (Error: {result.error})
-                                </Typography>
-                              )}
-                            </Box>
-                          }
-                        />
-                      </ListItem>
-                      {index < scanResultArray.length - 1 && <Divider />}
-                    </React.Fragment>
-                  ))}
-                </List>
+                <>
+                  <List>
+                    {currentResults.map((result, index) => (
+                      <React.Fragment key={result.url}>
+                        <ListItem>
+                          <ListItemText 
+                            primary={
+                              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                <Typography sx={{ wordBreak: 'break-all' }}>{result.url}</Typography>
+                                {result.error && (
+                                  <Typography color="error" sx={{ ml: 2 }}>
+                                    (Error: {result.error})
+                                  </Typography>
+                                )}
+                              </Box>
+                            }
+                          />
+                        </ListItem>
+                        {index < currentResults.length - 1 && <Divider />}
+                      </React.Fragment>
+                    ))}
+                  </List>
+                  {totalPages > 1 && (
+                    <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
+                      <Pagination 
+                        count={totalPages} 
+                        page={currentPage} 
+                        onChange={handlePageChange}
+                        color="primary"
+                        size="large"
+                      />
+                    </Box>
+                  )}
+                </>
               )}
             </Box>
           )}
