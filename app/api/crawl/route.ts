@@ -309,10 +309,11 @@ async function runAccessibilityCheckOnLocalCopy(page: Page, tempDir: string, wca
 }> {
   console.log('Starting accessibility check on local copy...');
   let localPage: Page | null = null;
+  let browser: Browser | null = null;
   
   try {
     // Create a new browser instance specifically for the local copy
-    const browser = await puppeteer.launch({ 
+    browser = await puppeteer.launch({ 
       headless: "new",
       args: [
         '--no-sandbox',
@@ -344,177 +345,180 @@ async function runAccessibilityCheckOnLocalCopy(page: Page, tempDir: string, wca
         '--window-size=1920,1080'
       ],
       ignoreHTTPSErrors: true,
-      timeout: 60000,
-      protocolTimeout: 60000
+      timeout: 120000, // Increased timeout
+      protocolTimeout: 120000 // Increased protocol timeout
     });
 
-    try {
-      // Create a new page for the local copy
-      localPage = await browser.newPage();
+    // Create a new page for the local copy
+    localPage = await browser.newPage();
+    
+    // Set longer timeouts for local file loading
+    await localPage.setDefaultTimeout(120000);
+    await localPage.setDefaultNavigationTimeout(120000);
+
+    // Load the local HTML file
+    const localUrl = `file://${path.join(tempDir, 'index.html')}`;
+    console.log(`Loading local file: ${localUrl}`);
+    
+    const response = await localPage.goto(localUrl, { 
+      waitUntil: 'networkidle0',
+      timeout: 120000 
+    });
+
+    if (!response) {
+      throw new Error('Failed to load local file');
+    }
+
+    // Enhanced page load verification with increased timeouts
+    await Promise.all([
+      // Wait for the page to be fully loaded
+      localPage.waitForFunction(() => {
+        return document.readyState === 'complete';
+      }, { timeout: 30000 }),
       
-      // Set longer timeouts for local file loading
-      await localPage.setDefaultTimeout(60000);
-      await localPage.setDefaultNavigationTimeout(60000);
-
-      // Load the local HTML file
-      const localUrl = `file://${path.join(tempDir, 'index.html')}`;
-      console.log(`Loading local file: ${localUrl}`);
+      // Wait for any pending network requests
+      localPage.waitForFunction(() => {
+        return window.performance.getEntriesByType('resource')
+          .every(resource => (resource as PerformanceResourceTiming).responseEnd > 0);
+      }, { timeout: 30000 }),
       
-      const response = await localPage.goto(localUrl, { 
-        waitUntil: 'networkidle0',
-        timeout: 60000 
+      // Wait for any pending animations
+      localPage.waitForFunction(() => {
+        return !document.querySelector('*[style*="animation"]');
+      }, { timeout: 15000 }).catch(() => {
+        console.log('Animation timeout, continuing anyway...');
+      }),
+      
+      // Wait for any pending images
+      localPage.waitForFunction(() => {
+        return Array.from(document.images).every(img => img.complete);
+      }, { timeout: 30000 }).catch(() => {
+        console.log('Image load timeout, continuing anyway...');
+      })
+    ]);
+
+    // Inject axe-core
+    await localPage.addScriptTag({
+      content: axeCoreSource,
+      id: 'axe-core'
+    });
+
+    // Wait for axe to be available with increased timeout
+    await localPage.waitForFunction(() => {
+      return typeof window.axe !== 'undefined';
+    }, { timeout: 30000 });
+
+    // Configure axe-core
+    await localPage.evaluate(() => {
+      window.axe.configure({
+        rules: [
+          { id: 'color-contrast', enabled: true },
+          { id: 'document-title', enabled: true },
+          { id: 'html-has-lang', enabled: true },
+          { id: 'image-alt', enabled: true },
+          { id: 'link-name', enabled: true },
+          { id: 'meta-viewport', enabled: true }
+        ],
+        performanceTimer: true,
+        pingWaitTime: 2000, // Increased wait time
+        resultTypes: ['violations', 'passes', 'incomplete', 'inapplicable']
       });
+    });
 
-      if (!response) {
-        throw new Error('Failed to load local file');
-      }
-
-      // Enhanced page load verification
-      await Promise.all([
-        // Wait for the page to be fully loaded
-        localPage.waitForFunction(() => {
-          return document.readyState === 'complete';
-        }, { timeout: 10000 }),
-        
-        // Wait for any pending network requests
-        localPage.waitForFunction(() => {
-          return window.performance.getEntriesByType('resource')
-            .every(resource => (resource as PerformanceResourceTiming).responseEnd > 0);
-        }, { timeout: 10000 }),
-        
-        // Wait for any pending animations
-        localPage.waitForFunction(() => {
-          return !document.querySelector('*[style*="animation"]');
-        }, { timeout: 5000 }).catch(() => {
-          console.log('Animation timeout, continuing anyway...');
-        }),
-        
-        // Wait for any pending images
-        localPage.waitForFunction(() => {
-          return Array.from(document.images).every(img => img.complete);
-        }, { timeout: 10000 }).catch(() => {
-          console.log('Image load timeout, continuing anyway...');
-        })
-      ]);
-
-      // Inject axe-core
-      await localPage.addScriptTag({
-        content: axeCoreSource,
-        id: 'axe-core'
-      });
-
-      // Wait for axe to be available
-      await localPage.waitForFunction(() => {
-        return typeof window.axe !== 'undefined';
-      }, { timeout: 10000 });
-
-      // Configure axe-core
-      await localPage.evaluate(() => {
-        window.axe.configure({
-          rules: [
-            { id: 'color-contrast', enabled: true },
-            { id: 'document-title', enabled: true },
-            { id: 'html-has-lang', enabled: true },
-            { id: 'image-alt', enabled: true },
-            { id: 'link-name', enabled: true },
-            { id: 'meta-viewport', enabled: true }
-          ],
-          performanceTimer: true,
-          pingWaitTime: 1000,
-          resultTypes: ['violations', 'passes', 'incomplete', 'inapplicable']
-        });
-      });
-
-      // Run the analysis
-      const results = await Promise.race([
-        localPage.evaluate(() => {
-          return new Promise<{ 
-            violations: any[]; 
-            passes: any[]; 
-            incomplete: any[];
-            inapplicable: any[];
-          }>((resolve, reject) => {
-            if (!window.axe) {
-              reject(new Error('axe-core not available'));
-              return;
-            }
-
-            window.axe.run(document, {
-              resultTypes: ['violations', 'passes', 'incomplete', 'inapplicable'],
-              pingWaitTime: 1000,
-              performanceTimer: true
-            }).then((results: any) => {
-              resolve({
-                violations: results.violations || [],
-                passes: results.passes || [],
-                incomplete: results.incomplete || [],
-                inapplicable: results.inapplicable || []
-              });
-            }).catch((error: Error) => {
-              console.error('Error during analysis:', error);
-              reject(error);
-            });
-          });
-        }),
-        new Promise<{ 
+    // Run the analysis with increased timeout
+    const results = await Promise.race([
+      localPage.evaluate(() => {
+        return new Promise<{ 
           violations: any[]; 
           passes: any[]; 
           incomplete: any[];
           inapplicable: any[];
-        }>((_, reject) => 
-          setTimeout(() => reject(new Error('Analysis timed out')), 20000)
-        )
-      ]);
+        }>((resolve, reject) => {
+          if (!window.axe) {
+            reject(new Error('axe-core not available'));
+            return;
+          }
 
-      // Filter results based on WCAG levels
-      const filterByWcagLevel = (result: any) => {
-        const tags = result.tags || [];
-        const wcagTags = tags.filter((tag: string) => tag.startsWith('wcag2'));
-        
-        if (wcagTags.length === 0) return true; // Include results without WCAG tags
-        
-        return wcagTags.some((tag: string) => {
-          if (tag.endsWith('a') && wcagLevels.A) return true;
-          if (tag.endsWith('aa') && wcagLevels.AA) return true;
-          if (tag.endsWith('aaa') && wcagLevels.AAA) return true;
-          return false;
+          window.axe.run(document, {
+            resultTypes: ['violations', 'passes', 'incomplete', 'inapplicable'],
+            pingWaitTime: 2000,
+            performanceTimer: true
+          }).then((results: any) => {
+            resolve({
+              violations: results.violations || [],
+              passes: results.passes || [],
+              incomplete: results.incomplete || [],
+              inapplicable: results.inapplicable || []
+            });
+          }).catch((error: Error) => {
+            console.error('Error during analysis:', error);
+            reject(error);
+          });
         });
-      };
+      }),
+      new Promise<{ 
+        violations: any[]; 
+        passes: any[]; 
+        incomplete: any[];
+        inapplicable: any[];
+      }>((_, reject) => 
+        setTimeout(() => reject(new Error('Analysis timed out')), 60000)
+      )
+    ]);
 
-      // Map inapplicable results to nonApplicable and filter
-      const nonApplicable = results.inapplicable
-        .filter(filterByWcagLevel)
-        .map(result => ({
-          id: result.id,
-          impact: result.impact,
-          description: result.description,
-          help: result.help,
-          helpUrl: result.helpUrl,
-          tags: result.tags
-        }));
+    // Filter results based on WCAG levels
+    const filterByWcagLevel = (result: any) => {
+      const tags = result.tags || [];
+      const wcagTags = tags.filter((tag: string) => tag.startsWith('wcag2'));
+      
+      if (wcagTags.length === 0) return true; // Include results without WCAG tags
+      
+      return wcagTags.some((tag: string) => {
+        if (tag.endsWith('a') && wcagLevels.A) return true;
+        if (tag.endsWith('aa') && wcagLevels.AA) return true;
+        if (tag.endsWith('aaa') && wcagLevels.AAA) return true;
+        return false;
+      });
+    };
 
-      return {
-        violations: results.violations.filter(filterByWcagLevel),
-        passes: results.passes.filter(filterByWcagLevel),
-        incomplete: results.incomplete.filter(filterByWcagLevel),
-        nonApplicable
-      };
-    } finally {
-      // Clean up the local page and browser
-      if (localPage) {
-        await localPage.close();
-      }
-      await browser.close();
-    }
+    // Map inapplicable results to nonApplicable and filter
+    const nonApplicable = results.inapplicable
+      .filter(filterByWcagLevel)
+      .map(result => ({
+        id: result.id,
+        impact: result.impact,
+        description: result.description,
+        help: result.help,
+        helpUrl: result.helpUrl,
+        tags: result.tags
+      }));
+
+    return {
+      violations: results.violations.filter(filterByWcagLevel),
+      passes: results.passes.filter(filterByWcagLevel),
+      incomplete: results.incomplete.filter(filterByWcagLevel),
+      nonApplicable
+    };
   } catch (error) {
     console.error('Accessibility check failed:', error);
-    return {
-      violations: [],
-      passes: [],
-      incomplete: [],
-      nonApplicable: [],
-      error: error instanceof Error ? error.message : 'Unknown error during accessibility check'
-    };
+    // Instead of returning empty results, throw the error to be handled by the caller
+    throw error;
+  } finally {
+    // Ensure proper cleanup in the finally block
+    if (localPage) {
+      try {
+        await localPage.close();
+      } catch (e) {
+        console.error('Error closing local page:', e);
+      }
+    }
+    if (browser) {
+      try {
+        await browser.close();
+      } catch (e) {
+        console.error('Error closing browser:', e);
+      }
+    }
   }
 }
 
