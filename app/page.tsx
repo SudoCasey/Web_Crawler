@@ -226,6 +226,7 @@ export default function Home() {
   const [crawlEntireWebsite, setCrawlEntireWebsite] = useState(false);
   const [checkAccessibility, setCheckAccessibility] = useState(false);
   const [wcagLevel, setWcagLevel] = useState<'X' | 'A' | 'AA' | 'AAA'>('X');
+  const [concurrentPages, setConcurrentPages] = useState<number>(1);
   const [showLinkDiscovery, setShowLinkDiscovery] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
@@ -265,6 +266,12 @@ export default function Home() {
 
   const handleSlowRateLimitChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     setSlowRateLimit(event.target.checked);
+  }, []);
+
+  const handleConcurrentPagesChange = useCallback((event: React.MouseEvent<HTMLElement>, newValue: number | null) => {
+    if (newValue !== null) {
+      setConcurrentPages(newValue);
+    }
   }, []);
 
   const OptionsRow = useMemo(() => (
@@ -318,8 +325,27 @@ export default function Home() {
           </ToggleButton>
         </ToggleButtonGroup>
       </Box>
+
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Typography variant="body1" sx={{ whiteSpace: 'nowrap' }}>
+          Concurrent Pages:
+        </Typography>
+        <ToggleButtonGroup
+          value={concurrentPages}
+          exclusive
+          onChange={handleConcurrentPagesChange}
+          aria-label="Number of concurrent pages to crawl"
+          size="small"
+        >
+          {[1, 2, 3, 4, 5].map((num) => (
+            <ToggleButton key={num} value={num} aria-label={`${num} concurrent pages`}>
+              {num}
+            </ToggleButton>
+          ))}
+        </ToggleButtonGroup>
+      </Box>
     </Box>
-  ), [takeScreenshots, crawlEntireWebsite, wcagLevel, handleScreenshotsChange, handleFullCrawlChange, handleWcagLevelChange]);
+  ), [takeScreenshots, crawlEntireWebsite, wcagLevel, concurrentPages, handleScreenshotsChange, handleFullCrawlChange, handleWcagLevelChange, handleConcurrentPagesChange]);
 
   const AdvancedSettings = useMemo(() => (
     <Box sx={{ width: 300, p: 3 }}>
@@ -462,7 +488,8 @@ export default function Home() {
             AAA: wcagLevel === 'AAA'
           },
           increaseTimeout,
-          slowRateLimit
+          slowRateLimit,
+          concurrentPages
         }),
         signal: abortControllerRef.current.signal
       });

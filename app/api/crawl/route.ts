@@ -20,6 +20,7 @@ interface CrawlRequest {
   };
   increaseTimeout: boolean;
   slowRateLimit: boolean;
+  concurrentPages: number;
 }
 
 interface CrawlResult {
@@ -860,7 +861,8 @@ export async function POST(request: Request) {
         checkAccessibility, 
         wcagLevels,
         increaseTimeout,
-        slowRateLimit 
+        slowRateLimit,
+        concurrentPages 
       }: CrawlRequest = await request.json();
       
       if (!url) {
@@ -877,7 +879,8 @@ export async function POST(request: Request) {
         checkAccessibility, 
         wcagLevels,
         increaseTimeout,
-        slowRateLimit 
+        slowRateLimit,
+        concurrentPages 
       });
 
       // Clean up old screenshots before starting new scan
@@ -899,16 +902,15 @@ export async function POST(request: Request) {
           log(`Sitemap found: ${usedSitemap}, URLs to crawl: ${sitemapUrls.length}`);
           const urlsToCrawl = sitemapUrls.length > 0 ? sitemapUrls : [url];
           
-          // Process URLs in parallel with a concurrency limit
-          const concurrencyLimit = 3;
-          for (let i = 0; i < urlsToCrawl.length; i += concurrencyLimit) {
+          // Process URLs in parallel with the specified concurrency limit
+          for (let i = 0; i < urlsToCrawl.length; i += concurrentPages) {
             if (!isClientConnected) {
               log('Client disconnected, stopping crawl');
               break;
             }
             
-            const batch = urlsToCrawl.slice(i, i + concurrencyLimit);
-            log(`Processing batch of ${batch.length} URLs`);
+            const batch = urlsToCrawl.slice(i, i + concurrentPages);
+            log(`Processing batch of ${batch.length} URLs with concurrency ${concurrentPages}`);
             const batchResults = await Promise.all(
               batch.map(urlToCrawl => 
                 !visited.has(urlToCrawl) ? crawlPage(urlToCrawl, takeScreenshots, visited, baseUrl, true, checkAccessibility, wcagLevels, increaseTimeout, slowRateLimit) : null
@@ -940,16 +942,21 @@ export async function POST(request: Request) {
               });
               
               log(`Found ${newLinks.size} new links to crawl`);
-              // Process new links with delay
-              for (const link of Array.from(newLinks)) {
+              // Process new links with the specified concurrency
+              const newLinksArray = Array.from(newLinks);
+              for (let j = 0; j < newLinksArray.length; j += concurrentPages) {
                 if (!isClientConnected) {
                   log('Client disconnected, stopping crawl');
                   break;
                 }
-                await delay(1000);
-                log(`Crawling new link: ${link}`);
-                const subResult = await crawlPage(link, takeScreenshots, visited, baseUrl, true, checkAccessibility, wcagLevels, increaseTimeout, slowRateLimit);
-                results.push(subResult);
+                
+                const newBatch = newLinksArray.slice(j, j + concurrentPages);
+                log(`Crawling new batch of ${newBatch.length} links`);
+                const newBatchResults = await Promise.all(
+                  newBatch.map(link => crawlPage(link, takeScreenshots, visited, baseUrl, true, checkAccessibility, wcagLevels, increaseTimeout, slowRateLimit))
+                );
+                
+                results.push(...newBatchResults);
                 
                 await writeResponse({
                   results,
@@ -957,6 +964,11 @@ export async function POST(request: Request) {
                   isComplete: false,
                   checkedAccessibility: checkAccessibility
                 });
+                
+                // Add a small delay between batches if rate limiting is enabled
+                if (slowRateLimit) {
+                  await delay(1000);
+                }
               }
             }
           }
