@@ -924,9 +924,9 @@ export async function POST(request: Request) {
             results.push(...batchResults.filter((r): r is CrawlResult => r !== null));
             log(`Completed batch, total results: ${results.length}`);
             
-            // Send intermediate results
+            // Send only new results in intermediate responses
             await writeResponse({
-              results,
+              newResults: batchResults.filter((r): r is CrawlResult => r !== null),
               usedSitemap,
               isComplete: false,
               checkedAccessibility: checkAccessibility
@@ -962,8 +962,9 @@ export async function POST(request: Request) {
                 
                 results.push(...newBatchResults);
                 
+                // Send only new results in intermediate responses
                 await writeResponse({
-                  results,
+                  newResults: newBatchResults,
                   usedSitemap,
                   isComplete: false,
                   checkedAccessibility: checkAccessibility
@@ -992,8 +993,9 @@ export async function POST(request: Request) {
           );
           results.push(result);
           
+          // Send only the new result in intermediate response
           await writeResponse({
-            results,
+            newResults: [result],
             usedSitemap,
             isComplete: false,
             checkedAccessibility: checkAccessibility
@@ -1002,7 +1004,7 @@ export async function POST(request: Request) {
         
         if (isClientConnected) {
           log('Crawl completed, sending final results');
-          // Send final results
+          // Send final results (full array)
           await writeResponse({
             results,
             usedSitemap,

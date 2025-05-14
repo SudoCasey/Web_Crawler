@@ -216,30 +216,533 @@ interface ScanResult {
 
 interface TimerDisplayProps {
   isLoading: boolean;
+  isCrawlCancelled: boolean;
   elapsed: number;
-  formatTime: (seconds: number) => string;
 }
+
+// Add memoized scanned page accordion
+const ScannedPageAccordion = React.memo(function ScannedPageAccordion({ 
+  result,
+  showLinkDiscovery 
+}: { 
+  result: CrawlResult;
+  showLinkDiscovery: boolean;
+}) {
+  return (
+    <Accordion
+      sx={{
+        '&.Mui-expanded': {
+          backgroundColor: 'rgba(25, 118, 210, 0.08)',
+          borderLeft: '4px solid #1976d2',
+        },
+      }}
+    >
+      <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+        <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+          <Typography component="h3" sx={{ wordBreak: 'break-all' }}>{result.url}</Typography>
+          {result.error && (
+            <Typography color="error" sx={{ ml: 2 }}>
+              (Error: {result.error})
+            </Typography>
+          )}
+        </Box>
+      </AccordionSummary>
+      <AccordionDetails>
+        {result.screenshot && (
+          <Box sx={{ mt: 2 }}>
+            <Accordion defaultExpanded>
+              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                <Typography component="h4" variant="h6">Screenshot</Typography>
+              </AccordionSummary>
+              <AccordionDetails>
+                <img 
+                  src={result.screenshot} 
+                  alt={`Screenshot of ${result.url}`}
+                  style={{ maxWidth: '100%', height: 'auto' }}
+                />
+              </AccordionDetails>
+            </Accordion>
+          </Box>
+        )}
+        {result.accessibilityResults && (
+          <Box sx={{ mt: 2 }}>
+            <Typography component="h4" variant="h6" gutterBottom>Accessibility Results:</Typography>
+            
+            {/* Violations Section */}
+            <Accordion 
+              defaultExpanded={false}
+              sx={{
+                '&.Mui-expanded': {
+                  backgroundColor: 'rgba(211, 47, 47, 0.08)',
+                  borderLeft: '4px solid #d32f2f',
+                },
+              }}
+            >
+              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                <Typography component="h5" variant="subtitle1" color="error">
+                  Violations ({result.accessibilityResults.violations.length})
+                </Typography>
+              </AccordionSummary>
+              <AccordionDetails>
+                {result.accessibilityResults.violations.map((violation, vIndex) => (
+                  <Accordion 
+                    key={vIndex}
+                    defaultExpanded={result.accessibilityResults?.violations.length === 1}
+                    sx={{
+                      '&.Mui-expanded': {
+                        backgroundColor: 'rgba(211, 47, 47, 0.04)',
+                        borderLeft: '2px solid #d32f2f',
+                      },
+                    }}
+                  >
+                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                      <Typography component="h6">
+                        {WCAG_MAPPING[violation.id] ? 
+                          `SC ${WCAG_MAPPING[violation.id].sc} ${WCAG_MAPPING[violation.id].name} - ${violation.impact} impact (${violation.nodes.length} ${violation.nodes.length === 1 ? 'instance' : 'instances'})` :
+                          `${violation.id} - ${violation.impact} impact (${violation.nodes.length} ${violation.nodes.length === 1 ? 'instance' : 'instances'})`
+                        }
+                      </Typography>
+                    </AccordionSummary>
+                    <AccordionDetails>
+                      <Box sx={{
+                        maxHeight: violation.nodes.length > 3 ? '600px' : 'none',
+                        overflowY: violation.nodes.length > 3 ? 'auto' : 'visible',
+                        '&::-webkit-scrollbar': {
+                          width: '8px',
+                        },
+                        '&::-webkit-scrollbar-track': {
+                          background: 'rgba(255, 255, 255, 0.1)',
+                          borderRadius: '4px',
+                        },
+                        '&::-webkit-scrollbar-thumb': {
+                          background: 'rgba(255, 255, 255, 0.2)',
+                          borderRadius: '4px',
+                          '&:hover': {
+                            background: 'rgba(255, 255, 255, 0.3)',
+                          },
+                        },
+                      }}>
+                        <Typography component="h6" variant="subtitle2" gutterBottom>
+                          WCAG Success Criterion:
+                        </Typography>
+                        <Typography paragraph>
+                          {WCAG_MAPPING[violation.id] ? 
+                            `SC ${WCAG_MAPPING[violation.id].sc} ${WCAG_MAPPING[violation.id].name} (Level ${WCAG_MAPPING[violation.id].level})` :
+                            violation.tags
+                              .filter(tag => tag.startsWith('wcag2'))
+                              .map(tag => {
+                                const level = tag.endsWith('a') ? 'A' : tag.endsWith('aa') ? 'AA' : 'AAA';
+                                const sc = tag.match(/\d+\.\d+\.\d+/)?.[0] || '';
+                                return `SC ${sc} Level ${level}`;
+                              })
+                              .join(', ')}
+                        </Typography>
+                        <Typography component="h6" variant="subtitle2" gutterBottom>
+                          AXE Core Check:
+                        </Typography>
+                        <Typography paragraph>
+                          {violation.id}
+                        </Typography>
+                        <Typography component="h6" variant="subtitle2" gutterBottom>
+                          Description:
+                        </Typography>
+                        <Typography paragraph>
+                          {violation.description}
+                        </Typography>
+                        <Typography component="h6" variant="subtitle2" gutterBottom>
+                          Explanation:
+                        </Typography>
+                        <Typography paragraph>
+                          {violation.help}
+                        </Typography>
+                        <Typography variant="body2" sx={{ mb: 2 }}>
+                          <a 
+                            href={WCAG_MAPPING[violation.id]?.url || `https://www.w3.org/WAI/WCAG22/quickref/?versions=2.2&levels=${violation.tags.find(tag => tag.startsWith('wcag2'))?.toLowerCase() || 'aaa'}&technologies=${violation.id}`}
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            style={{
+                              color: '#90caf9',
+                              textDecoration: 'none'
+                            }}
+                            onMouseOver={(e) => {
+                              e.currentTarget.style.color = '#42a5f5';
+                              e.currentTarget.style.textDecoration = 'underline';
+                            }}
+                            onMouseOut={(e) => {
+                              e.currentTarget.style.color = '#90caf9';
+                              e.currentTarget.style.textDecoration = 'none';
+                            }}
+                            onFocus={(e) => {
+                              e.currentTarget.style.color = '#42a5f5';
+                              e.currentTarget.style.textDecoration = 'underline';
+                            }}
+                            onBlur={(e) => {
+                              e.currentTarget.style.color = '#90caf9';
+                              e.currentTarget.style.textDecoration = 'none';
+                            }}
+                          >
+                            View WCAG 2.2 Rule
+                          </a>
+                        </Typography>
+                        <Typography component="h6" variant="subtitle2" gutterBottom>
+                          Affected Elements:
+                        </Typography>
+                        {violation.nodes.map((node, nIndex) => (
+                          <Box key={nIndex} sx={{ mb: 2 }}>
+                            <Typography variant="body2" component="pre" sx={{ 
+                              backgroundColor: 'rgba(0, 0, 0, 0.1)',
+                              p: 1,
+                              borderRadius: 1,
+                              overflowX: 'auto',
+                              fontFamily: 'monospace',
+                              whiteSpace: 'pre-wrap',
+                              wordBreak: 'break-word'
+                            }}>
+                              {node.html}
+                            </Typography>
+                            <Typography variant="body2" color="error" sx={{ mt: 1 }}>
+                              {node.failureSummary}
+                            </Typography>
+                          </Box>
+                        ))}
+                      </Box>
+                    </AccordionDetails>
+                  </Accordion>
+                ))}
+              </AccordionDetails>
+            </Accordion>
+
+            {/* Passes Section */}
+            <Accordion 
+              defaultExpanded={false}
+              sx={{
+                '&.Mui-expanded': {
+                  backgroundColor: 'rgba(46, 125, 50, 0.08)',
+                  borderLeft: '4px solid #2e7d32',
+                },
+              }}
+            >
+              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                <Typography component="h5" variant="subtitle1" color="success.main">
+                  Passes ({result.accessibilityResults.passes.length})
+                </Typography>
+              </AccordionSummary>
+              <AccordionDetails>
+                {result.accessibilityResults.passes.map((pass, pIndex) => (
+                  <Accordion 
+                    key={pIndex}
+                    defaultExpanded={false}
+                    sx={{
+                      '&.Mui-expanded': {
+                        backgroundColor: 'rgba(46, 125, 50, 0.04)',
+                        borderLeft: '2px solid #2e7d32',
+                      },
+                    }}
+                  >
+                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                      <Typography component="h6">
+                        {WCAG_MAPPING[pass.id] ? 
+                          `SC ${WCAG_MAPPING[pass.id].sc} ${WCAG_MAPPING[pass.id].name}` :
+                          pass.id}
+                      </Typography>
+                    </AccordionSummary>
+                    <AccordionDetails>
+                      <Typography component="h6" variant="subtitle2" gutterBottom>
+                        WCAG Success Criterion:
+                      </Typography>
+                      <Typography paragraph>
+                        {WCAG_MAPPING[pass.id] ? 
+                          `SC ${WCAG_MAPPING[pass.id].sc} ${WCAG_MAPPING[pass.id].name} (Level ${WCAG_MAPPING[pass.id].level})` :
+                          pass.tags
+                            .filter(tag => tag.startsWith('wcag2'))
+                            .map(tag => {
+                              const level = tag.endsWith('a') ? 'A' : tag.endsWith('aa') ? 'AA' : 'AAA';
+                              const sc = tag.match(/\d+\.\d+\.\d+/)?.[0] || '';
+                              return `SC ${sc} Level ${level}`;
+                            })
+                            .join(', ')}
+                      </Typography>
+                      <Typography component="h6" variant="subtitle2" gutterBottom>
+                        AXE Core Check:
+                      </Typography>
+                      <Typography paragraph>
+                        {pass.id}
+                      </Typography>
+                      <Typography component="h6" variant="subtitle2" gutterBottom>
+                        Description:
+                      </Typography>
+                      <Typography>
+                        {pass.description}
+                      </Typography>
+                    </AccordionDetails>
+                  </Accordion>
+                ))}
+              </AccordionDetails>
+            </Accordion>
+
+            {/* Incomplete Section */}
+            <Accordion 
+              defaultExpanded={false}
+              sx={{
+                '&.Mui-expanded': {
+                  backgroundColor: 'rgba(237, 108, 2, 0.08)',
+                  borderLeft: '4px solid #ed6c02',
+                },
+              }}
+            >
+              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                <Typography component="h5" variant="subtitle1" color="warning.main">
+                  Incomplete Tests ({result.accessibilityResults.incomplete.length})
+                </Typography>
+              </AccordionSummary>
+              <AccordionDetails>
+                {result.accessibilityResults.incomplete.map((incomplete, iIndex) => (
+                  <Accordion 
+                    key={iIndex}
+                    defaultExpanded={false}
+                    sx={{
+                      '&.Mui-expanded': {
+                        backgroundColor: 'rgba(237, 108, 2, 0.04)',
+                        borderLeft: '2px solid #ed6c02',
+                      },
+                    }}
+                  >
+                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                      <Typography component="h6">
+                        {WCAG_MAPPING[incomplete.id] ? 
+                          `SC ${WCAG_MAPPING[incomplete.id].sc} ${WCAG_MAPPING[incomplete.id].name}` :
+                          incomplete.id}
+                      </Typography>
+                    </AccordionSummary>
+                    <AccordionDetails>
+                      <Typography component="h6" variant="subtitle2" gutterBottom>
+                        WCAG Success Criterion:
+                      </Typography>
+                      <Typography paragraph>
+                        {WCAG_MAPPING[incomplete.id] ? 
+                          `SC ${WCAG_MAPPING[incomplete.id].sc} ${WCAG_MAPPING[incomplete.id].name} (Level ${WCAG_MAPPING[incomplete.id].level})` :
+                          incomplete.tags
+                            .filter(tag => tag.startsWith('wcag2'))
+                            .map(tag => {
+                              const level = tag.endsWith('a') ? 'A' : tag.endsWith('aa') ? 'AA' : 'AAA';
+                              const sc = tag.match(/\d+\.\d+\.\d+/)?.[0] || '';
+                              return `SC ${sc} Level ${level}`;
+                            })
+                            .join(', ')}
+                      </Typography>
+                      <Typography component="h6" variant="subtitle2" gutterBottom>
+                        AXE Core Check:
+                      </Typography>
+                      <Typography paragraph>
+                        {incomplete.id}
+                      </Typography>
+                      <Typography component="h6" variant="subtitle2" gutterBottom>
+                        Description:
+                      </Typography>
+                      <Typography>
+                        {incomplete.description}
+                      </Typography>
+                    </AccordionDetails>
+                  </Accordion>
+                ))}
+              </AccordionDetails>
+            </Accordion>
+
+            {/* Non-applicable Section */}
+            <Accordion 
+              defaultExpanded={false}
+              sx={{
+                '&.Mui-expanded': {
+                  backgroundColor: 'rgba(156, 39, 176, 0.08)',
+                  borderLeft: '4px solid #9c27b0',
+                },
+              }}
+            >
+              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                <Typography component="h5" variant="subtitle1" color="secondary.main">
+                  Non-applicable Tests ({result.accessibilityResults.nonApplicable?.length || 0})
+                </Typography>
+              </AccordionSummary>
+              <AccordionDetails>
+                {result.accessibilityResults.nonApplicable?.map((nonApplicable, nIndex) => (
+                  <Accordion 
+                    key={nIndex}
+                    defaultExpanded={false}
+                    sx={{
+                      '&.Mui-expanded': {
+                        backgroundColor: 'rgba(156, 39, 176, 0.04)',
+                        borderLeft: '2px solid #9c27b0',
+                      },
+                    }}
+                  >
+                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                      <Typography component="h6">
+                        {WCAG_MAPPING[nonApplicable.id] ? 
+                          `SC ${WCAG_MAPPING[nonApplicable.id].sc} ${WCAG_MAPPING[nonApplicable.id].name}` :
+                          nonApplicable.id}
+                      </Typography>
+                    </AccordionSummary>
+                    <AccordionDetails>
+                      <Typography component="h6" variant="subtitle2" gutterBottom>
+                        WCAG Success Criterion:
+                      </Typography>
+                      <Typography paragraph>
+                        {WCAG_MAPPING[nonApplicable.id] ? 
+                          `SC ${WCAG_MAPPING[nonApplicable.id].sc} ${WCAG_MAPPING[nonApplicable.id].name} (Level ${WCAG_MAPPING[nonApplicable.id].level})` :
+                          nonApplicable.tags
+                            .filter(tag => tag.startsWith('wcag2'))
+                            .map(tag => {
+                              const level = tag.endsWith('a') ? 'A' : tag.endsWith('aa') ? 'AA' : 'AAA';
+                              const sc = tag.match(/\d+\.\d+\.\d+/)?.[0] || '';
+                              return `SC ${sc} Level ${level}`;
+                            })
+                            .join(', ')}
+                      </Typography>
+                      <Typography component="h6" variant="subtitle2" gutterBottom>
+                        AXE Core Check:
+                      </Typography>
+                      <Typography paragraph>
+                        {nonApplicable.id}
+                      </Typography>
+                      <Typography component="h6" variant="subtitle2" gutterBottom>
+                        Description:
+                      </Typography>
+                      <Typography>
+                        {nonApplicable.description}
+                      </Typography>
+                    </AccordionDetails>
+                  </Accordion>
+                ))}
+              </AccordionDetails>
+            </Accordion>
+          </Box>
+        )}
+        {showLinkDiscovery && result.links.length > 0 && (
+          <Box sx={{ mt: 2 }}>
+            <Typography variant="h6" gutterBottom>
+              New unique links found ({result.links.length}):
+            </Typography>
+            <List>
+              {result.links.map((link, linkIndex) => (
+                <ListItem key={linkIndex}>
+                  <ListItemText 
+                    primary={link}
+                    sx={{ wordBreak: 'break-all' }}
+                  />
+                </ListItem>
+              ))}
+            </List>
+          </Box>
+        )}
+      </AccordionDetails>
+    </Accordion>
+  );
+});
+
+// Move TimerDisplay to be a completely separate component
+const TimerDisplay = React.memo(function TimerDisplay() {
+  const [isLoading, setIsLoading] = useState(false);
+  const [isCrawlCancelled, setIsCrawlCancelled] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const startTimeRef = useRef<number | null>(null);
+
+  // Subscribe to crawl events
+  useEffect(() => {
+    const handleCrawlStart = () => {
+      setIsLoading(true);
+      setIsCrawlCancelled(false);
+      if (!startTimeRef.current) {
+        startTimeRef.current = Date.now();
+      }
+      timerRef.current = setInterval(() => {
+        const now = Date.now();
+        const elapsedMs = now - (startTimeRef.current || now);
+        setElapsed(Math.floor(elapsedMs / 1000));
+      }, 1000);
+    };
+
+    const handleCrawlComplete = () => {
+      setIsLoading(false);
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+      startTimeRef.current = null;
+      setElapsed(0);
+    };
+
+    const handleCrawlCancel = () => {
+      setIsLoading(false);
+      setIsCrawlCancelled(true);
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+
+    // Subscribe to events
+    window.addEventListener('crawl:start', handleCrawlStart);
+    window.addEventListener('crawl:complete', handleCrawlComplete);
+    window.addEventListener('crawl:cancel', handleCrawlCancel);
+
+    return () => {
+      // Cleanup
+      window.removeEventListener('crawl:start', handleCrawlStart);
+      window.removeEventListener('crawl:complete', handleCrawlComplete);
+      window.removeEventListener('crawl:cancel', handleCrawlCancel);
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, []);
+
+  if (!isLoading && elapsed === 0) return null;
+
+  // Format seconds as HH:MM:SS
+  const formatTime = (seconds: number) => {
+    const h = Math.floor(seconds / 3600).toString().padStart(2, '0');
+    const m = Math.floor((seconds % 3600) / 60).toString().padStart(2, '0');
+    const s = (seconds % 60).toString().padStart(2, '0');
+    return `${h}:${m}:${s}`;
+  };
+
+  return (
+    <Box sx={{ mb: 2 }}>
+      <Alert severity="info">
+        {isLoading
+          ? `Crawl running: ${formatTime(elapsed)}`
+          : isCrawlCancelled ? `Crawl cancelled after ${formatTime(elapsed)}` : `Crawl completed in ${formatTime(elapsed)}`}
+      </Alert>
+    </Box>
+  );
+});
 
 export default function Home() {
   const [url, setUrl] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [scanResultMap, setScanResultMap] = useState<Map<string, CrawlResult>>(new Map());
+  const [scanResultArray, setScanResultArray] = useState<CrawlResult[]>([]);
   const [takeScreenshots, setTakeScreenshots] = useState(false);
   const [crawlEntireWebsite, setCrawlEntireWebsite] = useState(false);
   const [checkAccessibility, setCheckAccessibility] = useState(false);
-  const [wcagLevel, setWcagLevel] = useState<'X' | 'A' | 'AA' | 'AAA'>('X');
+  const [wcagLevel, setWcagLevel] = useState<'A' | 'AA' | 'AAA' | 'X'>('X');
   const [concurrentPages, setConcurrentPages] = useState<number>(1);
-  const [showLinkDiscovery, setShowLinkDiscovery] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [showCompletion, setShowCompletion] = useState(false);
   const [isCrawlComplete, setIsCrawlComplete] = useState(false);
   const [isCrawlCancelled, setIsCrawlCancelled] = useState(false);
-  const [elapsedTime, setElapsedTime] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [increaseTimeout, setIncreaseTimeout] = useState(false);
   const [slowRateLimit, setSlowRateLimit] = useState(false);
+  const [usedSitemap, setUsedSitemap] = useState<boolean | null>(null);
+  const [tookScreenshots, setTookScreenshots] = useState(false);
+  const [checkedAccessibility, setCheckedAccessibility] = useState(false);
+  const [showLinkDiscovery, setShowLinkDiscovery] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const startTimeRef = useRef<number | null>(null);
+  const [elapsed, setElapsed] = useState(0);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   const handleScreenshotsChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
@@ -388,55 +891,6 @@ export default function Home() {
     </Box>
   ), [showLinkDiscovery, increaseTimeout, slowRateLimit, handleShowLinkDiscoveryChange, handleIncreaseTimeoutChange, handleSlowRateLimitChange]);
 
-  const TimerDisplay = React.memo(({ isLoading, elapsed, formatTime }: TimerDisplayProps) => {
-    if (!isLoading && elapsed === 0) return null;
-    
-    return (
-      <Box sx={{ mb: 2 }}>
-        <Alert severity="info">
-          {isLoading
-            ? `Crawl running: ${formatTime(elapsed)}`
-            : isCrawlCancelled ? `Crawl cancelled after ${formatTime(elapsed)}` : `Crawl completed in ${formatTime(elapsed)}`}
-        </Alert>
-      </Box>
-    );
-  });
-  
-  TimerDisplay.displayName = 'TimerDisplay';
-
-  // Format seconds as HH:MM:SS
-  const formatTime = (seconds: number) => {
-    const h = Math.floor(seconds / 3600).toString().padStart(2, '0');
-    const m = Math.floor((seconds % 3600) / 60).toString().padStart(2, '0');
-    const s = (seconds % 60).toString().padStart(2, '0');
-    return `${h}:${m}:${s}`;
-  };
-
-  // Stop timer helper
-  const stopTimer = () => {
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-  };
-
-  // Start timer helper
-  const startTimer = () => {
-    stopTimer(); // Ensure any existing timer is stopped first
-    startTimeRef.current = Date.now();
-    setElapsedTime(0);
-    timerRef.current = setInterval(() => {
-      if (startTimeRef.current) {
-        setElapsedTime(Math.floor((Date.now() - startTimeRef.current) / 1000));
-      }
-    }, 1000);
-  };
-
-  // Clean up timer on unmount
-  useEffect(() => {
-    return () => stopTimer();
-  }, []);
-
   const getUniqueLinks = (links: string[]): string[] => {
     return Array.from(new Set(links));
   };
@@ -447,14 +901,12 @@ export default function Home() {
       abortControllerRef.current = null;
     }
     setIsLoading(false);
-    stopTimer();
     if (startTimeRef.current) {
-      const finalElapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
-      setElapsedTime(finalElapsed);
       startTimeRef.current = null;
     }
     setIsCrawlComplete(true);
     setIsCrawlCancelled(true);
+    window.dispatchEvent(new Event('crawl:cancel'));
   };
 
   const handleCrawl = async () => {
@@ -465,11 +917,15 @@ export default function Home() {
 
     setIsLoading(true);
     setError(null);
-    setScanResult(null);
-    setElapsedTime(0);
-    startTimeRef.current = Date.now();
-    startTimer();
+    setScanResultMap(new Map());
+    setScanResultArray([]);
+    setUsedSitemap(null);
+    setTookScreenshots(takeScreenshots);
+    setCheckedAccessibility(wcagLevel !== 'X');
     abortControllerRef.current = new AbortController();
+
+    // Dispatch crawl start event
+    window.dispatchEvent(new Event('crawl:start'));
 
     try {
       const response = await fetch('/api/crawl', {
@@ -518,26 +974,35 @@ export default function Home() {
             const jsonStr = buffer.slice(startIndex, endIndex);
             try {
               const data = JSON.parse(jsonStr);
-              setScanResult({
-                results: data.results.map((result: CrawlResult) => ({
-                  ...result,
-                  isCrawling: !data.isComplete
-                })),
-                usedSitemap: data.usedSitemap,
-                tookScreenshots: takeScreenshots,
-                checkedAccessibility: data.checkedAccessibility
-              });
-              
-              if (data.isComplete) {
-                if (startTimeRef.current) {
-                  const finalElapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
-                  setElapsedTime(finalElapsed);
-                  startTimeRef.current = null;
-                }
-                stopTimer();
+              if (data.newResults) {
+                // Merge new results into the map
+                setScanResultMap(prevMap => {
+                  const newMap = new Map(prevMap);
+                  data.newResults.forEach((result: CrawlResult) => {
+                    newMap.set(result.url, result);
+                  });
+                  // Update the array for rendering
+                  setScanResultArray(Array.from(newMap.values()));
+                  return newMap;
+                });
+                setUsedSitemap(data.usedSitemap);
+                setTookScreenshots(takeScreenshots);
+                setCheckedAccessibility(data.checkedAccessibility);
+              } else if (data.results) {
+                // Final results: replace the map and array
+                const newMap = new Map<string, CrawlResult>();
+                data.results.forEach((result: CrawlResult) => {
+                  newMap.set(result.url, result);
+                });
+                setScanResultMap(newMap);
+                setScanResultArray(Array.from(newMap.values()));
+                setUsedSitemap(data.usedSitemap);
+                setTookScreenshots(takeScreenshots);
+                setCheckedAccessibility(data.checkedAccessibility);
                 setShowCompletion(true);
                 setIsCrawlComplete(true);
                 setIsLoading(false);
+                window.dispatchEvent(new Event('crawl:complete'));
               }
             } catch (e) {
               console.error('Error parsing JSON:', e);
@@ -551,8 +1016,9 @@ export default function Home() {
       } catch (error) {
         if (error instanceof Error && error.name === 'AbortError') {
           console.log('Crawl cancelled by user');
+          window.dispatchEvent(new Event('crawl:cancel'));
         } else {
-          throw error;
+          console.error('Error crawling website:', error);
         }
       } finally {
         reader.releaseLock();
@@ -560,14 +1026,16 @@ export default function Home() {
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
         console.log('Crawl cancelled by user');
+        window.dispatchEvent(new Event('crawl:cancel'));
       } else {
         console.error('Error crawling website:', error);
       }
     } finally {
       setIsLoading(false);
-      stopTimer();
-      startTimeRef.current = null;
       abortControllerRef.current = null;
+      if (!isCrawlCancelled) {
+        window.dispatchEvent(new Event('crawl:complete'));
+      }
     }
   };
 
@@ -619,468 +1087,57 @@ export default function Home() {
             </Box>
           </Box>
 
-          <TimerDisplay 
-            isLoading={isLoading}
-            elapsed={elapsedTime}
-            formatTime={formatTime}
-          />
+          <TimerDisplay />
 
-          {scanResult && (
+          {scanResultArray.length > 0 && (
             <Box sx={{ mt: 2 }}>
-              {scanResult.results.length > 0 && (
-                <>
-                  {scanResult.usedSitemap !== null && scanResult.results.length > 1 && (
-                    <Alert severity="info" sx={{ mb: 2 }}>
-                      Pages were discovered using {scanResult.usedSitemap ? 'sitemap.xml' : 'recursive link discovery'}
-                    </Alert>
-                  )}
-                  {scanResult.tookScreenshots ? (
-                    <Accordion defaultExpanded>
-                      <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
-                          <Typography component="h2">Scanned Pages ({scanResult.results.length})</Typography>
-                          {isLoading && (
-                            <CircularProgress size={20} sx={{ ml: 2 }} />
-                          )}
-                        </Box>
-                      </AccordionSummary>
-                      <AccordionDetails>
-                        {scanResult.results.map((result, index) => (
-                          <Accordion 
-                            key={index}
-                            sx={{
-                              '&.Mui-expanded': {
-                                backgroundColor: 'rgba(25, 118, 210, 0.08)',
-                                borderLeft: '4px solid #1976d2',
-                              },
-                            }}
-                          >
-                            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                              <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
-                                <Typography component="h3" sx={{ wordBreak: 'break-all' }}>{result.url}</Typography>
-                                {result.error && (
-                                  <Typography color="error" sx={{ ml: 2 }}>
-                                    (Error: {result.error})
-                                  </Typography>
-                                )}
-                              </Box>
-                            </AccordionSummary>
-                            <AccordionDetails>
-                              {result.screenshot && (
-                                <Box sx={{ mt: 2 }}>
-                                  <Accordion defaultExpanded>
-                                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                                      <Typography component="h4" variant="h6">Screenshot</Typography>
-                                    </AccordionSummary>
-                                    <AccordionDetails>
-                                      <img 
-                                        src={result.screenshot} 
-                                        alt={`Screenshot of ${result.url}`}
-                                        style={{ maxWidth: '100%', height: 'auto' }}
-                                      />
-                                    </AccordionDetails>
-                                  </Accordion>
-                                </Box>
+              {usedSitemap !== null && scanResultArray.length > 1 && (
+                <Alert severity="info" sx={{ mb: 2 }}>
+                  Pages were discovered using {usedSitemap ? 'sitemap.xml' : 'recursive link discovery'}
+                </Alert>
+              )}
+              {tookScreenshots ? (
+                <Accordion defaultExpanded>
+                  <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                      <Typography component="h2">Scanned Pages ({scanResultArray.length})</Typography>
+                      {isLoading && (
+                        <CircularProgress size={20} sx={{ ml: 2 }} />
+                      )}
+                    </Box>
+                  </AccordionSummary>
+                  <AccordionDetails>
+                    {scanResultArray.map((result, index) => (
+                      <ScannedPageAccordion 
+                        key={result.url} 
+                        result={result} 
+                        showLinkDiscovery={showLinkDiscovery}
+                      />
+                    ))}
+                  </AccordionDetails>
+                </Accordion>
+              ) : (
+                <List>
+                  {scanResultArray.map((result, index) => (
+                    <React.Fragment key={result.url}>
+                      <ListItem>
+                        <ListItemText 
+                          primary={
+                            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                              <Typography sx={{ wordBreak: 'break-all' }}>{result.url}</Typography>
+                              {result.error && (
+                                <Typography color="error" sx={{ ml: 2 }}>
+                                  (Error: {result.error})
+                                </Typography>
                               )}
-                              {result.accessibilityResults && (
-                                <Box sx={{ mt: 2 }}>
-                                  <Typography component="h4" variant="h6" gutterBottom>Accessibility Results:</Typography>
-                                  
-                                  {/* Violations Section */}
-                                  <Accordion 
-                                    defaultExpanded={false}
-                                    sx={{
-                                      '&.Mui-expanded': {
-                                        backgroundColor: 'rgba(211, 47, 47, 0.08)',
-                                        borderLeft: '4px solid #d32f2f',
-                                      },
-                                    }}
-                                  >
-                                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                                      <Typography component="h5" variant="subtitle1" color="error">
-                                        Violations ({result.accessibilityResults.violations.length})
-                                      </Typography>
-                                    </AccordionSummary>
-                                    <AccordionDetails>
-                                      {result.accessibilityResults.violations.map((violation, vIndex) => (
-                                        <Accordion 
-                                          key={vIndex}
-                                          defaultExpanded={result.accessibilityResults?.violations.length === 1}
-                                          sx={{
-                                            '&.Mui-expanded': {
-                                              backgroundColor: 'rgba(211, 47, 47, 0.04)',
-                                              borderLeft: '2px solid #d32f2f',
-                                            },
-                                          }}
-                                        >
-                                          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                                            <Typography component="h6">
-                                              {WCAG_MAPPING[violation.id] ? 
-                                                `SC ${WCAG_MAPPING[violation.id].sc} ${WCAG_MAPPING[violation.id].name} - ${violation.impact} impact (${violation.nodes.length} ${violation.nodes.length === 1 ? 'instance' : 'instances'})` :
-                                                `${violation.id} - ${violation.impact} impact (${violation.nodes.length} ${violation.nodes.length === 1 ? 'instance' : 'instances'})`
-                                              }
-                                            </Typography>
-                                          </AccordionSummary>
-                                          <AccordionDetails>
-                                            <Box sx={{
-                                              maxHeight: violation.nodes.length > 3 ? '600px' : 'none',
-                                              overflowY: violation.nodes.length > 3 ? 'auto' : 'visible',
-                                              '&::-webkit-scrollbar': {
-                                                width: '8px',
-                                              },
-                                              '&::-webkit-scrollbar-track': {
-                                                background: 'rgba(255, 255, 255, 0.1)',
-                                                borderRadius: '4px',
-                                              },
-                                              '&::-webkit-scrollbar-thumb': {
-                                                background: 'rgba(255, 255, 255, 0.2)',
-                                                borderRadius: '4px',
-                                                '&:hover': {
-                                                  background: 'rgba(255, 255, 255, 0.3)',
-                                                },
-                                              },
-                                            }}>
-                                              <Typography component="h6" variant="subtitle2" gutterBottom>
-                                                WCAG Success Criterion:
-                                              </Typography>
-                                              <Typography paragraph>
-                                                {WCAG_MAPPING[violation.id] ? 
-                                                  `SC ${WCAG_MAPPING[violation.id].sc} ${WCAG_MAPPING[violation.id].name} (Level ${WCAG_MAPPING[violation.id].level})` :
-                                                  violation.tags
-                                                    .filter(tag => tag.startsWith('wcag2'))
-                                                    .map(tag => {
-                                                      const level = tag.endsWith('a') ? 'A' : tag.endsWith('aa') ? 'AA' : 'AAA';
-                                                      const sc = tag.match(/\d+\.\d+\.\d+/)?.[0] || '';
-                                                      return `SC ${sc} Level ${level}`;
-                                                    })
-                                                    .join(', ')}
-                                              </Typography>
-                                              <Typography component="h6" variant="subtitle2" gutterBottom>
-                                                AXE Core Check:
-                                              </Typography>
-                                              <Typography paragraph>
-                                                {violation.id}
-                                              </Typography>
-                                              <Typography component="h6" variant="subtitle2" gutterBottom>
-                                                Description:
-                                              </Typography>
-                                              <Typography paragraph>
-                                                {violation.description}
-                                              </Typography>
-                                              <Typography component="h6" variant="subtitle2" gutterBottom>
-                                                Explanation:
-                                              </Typography>
-                                              <Typography paragraph>
-                                                {violation.help}
-                                              </Typography>
-                                              <Typography variant="body2" sx={{ mb: 2 }}>
-                                                <a 
-                                                  href={WCAG_MAPPING[violation.id]?.url || `https://www.w3.org/WAI/WCAG22/quickref/?versions=2.2&levels=${violation.tags.find(tag => tag.startsWith('wcag2'))?.toLowerCase() || 'aaa'}&technologies=${violation.id}`}
-                                                  target="_blank" 
-                                                  rel="noopener noreferrer"
-                                                  style={{
-                                                    color: '#90caf9',
-                                                    textDecoration: 'none'
-                                                  }}
-                                                  onMouseOver={(e) => {
-                                                    e.currentTarget.style.color = '#42a5f5';
-                                                    e.currentTarget.style.textDecoration = 'underline';
-                                                  }}
-                                                  onMouseOut={(e) => {
-                                                    e.currentTarget.style.color = '#90caf9';
-                                                    e.currentTarget.style.textDecoration = 'none';
-                                                  }}
-                                                  onFocus={(e) => {
-                                                    e.currentTarget.style.color = '#42a5f5';
-                                                    e.currentTarget.style.textDecoration = 'underline';
-                                                  }}
-                                                  onBlur={(e) => {
-                                                    e.currentTarget.style.color = '#90caf9';
-                                                    e.currentTarget.style.textDecoration = 'none';
-                                                  }}
-                                                >
-                                                  View WCAG 2.2 Rule
-                                                </a>
-                                              </Typography>
-                                              <Typography component="h6" variant="subtitle2" gutterBottom>
-                                                Affected Elements:
-                                              </Typography>
-                                              {violation.nodes.map((node, nIndex) => (
-                                                <Box key={nIndex} sx={{ mb: 2 }}>
-                                                  <Typography variant="body2" component="pre" sx={{ 
-                                                    backgroundColor: 'rgba(0, 0, 0, 0.1)',
-                                                    p: 1,
-                                                    borderRadius: 1,
-                                                    overflowX: 'auto',
-                                                    fontFamily: 'monospace',
-                                                    whiteSpace: 'pre-wrap',
-                                                    wordBreak: 'break-word'
-                                                  }}>
-                                                    {node.html}
-                                                  </Typography>
-                                                  <Typography variant="body2" color="error" sx={{ mt: 1 }}>
-                                                    {node.failureSummary}
-                                                  </Typography>
-                                                </Box>
-                                              ))}
-                                            </Box>
-                                          </AccordionDetails>
-                                        </Accordion>
-                                      ))}
-                                    </AccordionDetails>
-                                  </Accordion>
-
-                                  {/* Passes Section */}
-                                  <Accordion 
-                                    defaultExpanded={false}
-                                    sx={{
-                                      '&.Mui-expanded': {
-                                        backgroundColor: 'rgba(46, 125, 50, 0.08)',
-                                        borderLeft: '4px solid #2e7d32',
-                                      },
-                                    }}
-                                  >
-                                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                                      <Typography component="h5" variant="subtitle1" color="success.main">
-                                        Passes ({result.accessibilityResults.passes.length})
-                                      </Typography>
-                                    </AccordionSummary>
-                                    <AccordionDetails>
-                                      {result.accessibilityResults.passes.map((pass, pIndex) => (
-                                        <Accordion 
-                                          key={pIndex}
-                                          defaultExpanded={false}
-                                          sx={{
-                                            '&.Mui-expanded': {
-                                              backgroundColor: 'rgba(46, 125, 50, 0.04)',
-                                              borderLeft: '2px solid #2e7d32',
-                                            },
-                                          }}
-                                        >
-                                          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                                            <Typography component="h6">
-                                              {WCAG_MAPPING[pass.id] ? 
-                                                `SC ${WCAG_MAPPING[pass.id].sc} ${WCAG_MAPPING[pass.id].name}` :
-                                                pass.id}
-                                            </Typography>
-                                          </AccordionSummary>
-                                          <AccordionDetails>
-                                            <Typography component="h6" variant="subtitle2" gutterBottom>
-                                              WCAG Success Criterion:
-                                            </Typography>
-                                            <Typography paragraph>
-                                              {WCAG_MAPPING[pass.id] ? 
-                                                `SC ${WCAG_MAPPING[pass.id].sc} ${WCAG_MAPPING[pass.id].name} (Level ${WCAG_MAPPING[pass.id].level})` :
-                                                pass.tags
-                                                  .filter(tag => tag.startsWith('wcag2'))
-                                                  .map(tag => {
-                                                    const level = tag.endsWith('a') ? 'A' : tag.endsWith('aa') ? 'AA' : 'AAA';
-                                                    const sc = tag.match(/\d+\.\d+\.\d+/)?.[0] || '';
-                                                    return `SC ${sc} Level ${level}`;
-                                                  })
-                                                  .join(', ')}
-                                            </Typography>
-                                            <Typography component="h6" variant="subtitle2" gutterBottom>
-                                              AXE Core Check:
-                                            </Typography>
-                                            <Typography paragraph>
-                                              {pass.id}
-                                            </Typography>
-                                            <Typography component="h6" variant="subtitle2" gutterBottom>
-                                              Description:
-                                            </Typography>
-                                            <Typography>
-                                              {pass.description}
-                                            </Typography>
-                                          </AccordionDetails>
-                                        </Accordion>
-                                      ))}
-                                    </AccordionDetails>
-                                  </Accordion>
-
-                                  {/* Incomplete Section */}
-                                  <Accordion 
-                                    defaultExpanded={false}
-                                    sx={{
-                                      '&.Mui-expanded': {
-                                        backgroundColor: 'rgba(237, 108, 2, 0.08)',
-                                        borderLeft: '4px solid #ed6c02',
-                                      },
-                                    }}
-                                  >
-                                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                                      <Typography component="h5" variant="subtitle1" color="warning.main">
-                                        Incomplete Tests ({result.accessibilityResults.incomplete.length})
-                                      </Typography>
-                                    </AccordionSummary>
-                                    <AccordionDetails>
-                                      {result.accessibilityResults.incomplete.map((incomplete, iIndex) => (
-                                        <Accordion 
-                                          key={iIndex}
-                                          defaultExpanded={false}
-                                          sx={{
-                                            '&.Mui-expanded': {
-                                              backgroundColor: 'rgba(237, 108, 2, 0.04)',
-                                              borderLeft: '2px solid #ed6c02',
-                                            },
-                                          }}
-                                        >
-                                          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                                            <Typography component="h6">
-                                              {WCAG_MAPPING[incomplete.id] ? 
-                                                `SC ${WCAG_MAPPING[incomplete.id].sc} ${WCAG_MAPPING[incomplete.id].name}` :
-                                                incomplete.id}
-                                            </Typography>
-                                          </AccordionSummary>
-                                          <AccordionDetails>
-                                            <Typography component="h6" variant="subtitle2" gutterBottom>
-                                              WCAG Success Criterion:
-                                            </Typography>
-                                            <Typography paragraph>
-                                              {WCAG_MAPPING[incomplete.id] ? 
-                                                `SC ${WCAG_MAPPING[incomplete.id].sc} ${WCAG_MAPPING[incomplete.id].name} (Level ${WCAG_MAPPING[incomplete.id].level})` :
-                                                incomplete.tags
-                                                  .filter(tag => tag.startsWith('wcag2'))
-                                                  .map(tag => {
-                                                    const level = tag.endsWith('a') ? 'A' : tag.endsWith('aa') ? 'AA' : 'AAA';
-                                                    const sc = tag.match(/\d+\.\d+\.\d+/)?.[0] || '';
-                                                    return `SC ${sc} Level ${level}`;
-                                                  })
-                                                  .join(', ')}
-                                            </Typography>
-                                            <Typography component="h6" variant="subtitle2" gutterBottom>
-                                              AXE Core Check:
-                                            </Typography>
-                                            <Typography paragraph>
-                                              {incomplete.id}
-                                            </Typography>
-                                            <Typography component="h6" variant="subtitle2" gutterBottom>
-                                              Description:
-                                            </Typography>
-                                            <Typography>
-                                              {incomplete.description}
-                                            </Typography>
-                                          </AccordionDetails>
-                                        </Accordion>
-                                      ))}
-                                    </AccordionDetails>
-                                  </Accordion>
-
-                                  {/* Non-applicable Section */}
-                                  <Accordion 
-                                    defaultExpanded={false}
-                                    sx={{
-                                      '&.Mui-expanded': {
-                                        backgroundColor: 'rgba(156, 39, 176, 0.08)',
-                                        borderLeft: '4px solid #9c27b0',
-                                      },
-                                    }}
-                                  >
-                                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                                      <Typography component="h5" variant="subtitle1" color="secondary.main">
-                                        Non-applicable Tests ({result.accessibilityResults.nonApplicable?.length || 0})
-                                      </Typography>
-                                    </AccordionSummary>
-                                    <AccordionDetails>
-                                      {result.accessibilityResults.nonApplicable?.map((nonApplicable, nIndex) => (
-                                        <Accordion 
-                                          key={nIndex}
-                                          defaultExpanded={false}
-                                          sx={{
-                                            '&.Mui-expanded': {
-                                              backgroundColor: 'rgba(156, 39, 176, 0.04)',
-                                              borderLeft: '2px solid #9c27b0',
-                                            },
-                                          }}
-                                        >
-                                          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                                            <Typography component="h6">
-                                              {WCAG_MAPPING[nonApplicable.id] ? 
-                                                `SC ${WCAG_MAPPING[nonApplicable.id].sc} ${WCAG_MAPPING[nonApplicable.id].name}` :
-                                                nonApplicable.id}
-                                            </Typography>
-                                          </AccordionSummary>
-                                          <AccordionDetails>
-                                            <Typography component="h6" variant="subtitle2" gutterBottom>
-                                              WCAG Success Criterion:
-                                            </Typography>
-                                            <Typography paragraph>
-                                              {WCAG_MAPPING[nonApplicable.id] ? 
-                                                `SC ${WCAG_MAPPING[nonApplicable.id].sc} ${WCAG_MAPPING[nonApplicable.id].name} (Level ${WCAG_MAPPING[nonApplicable.id].level})` :
-                                                nonApplicable.tags
-                                                  .filter(tag => tag.startsWith('wcag2'))
-                                                  .map(tag => {
-                                                    const level = tag.endsWith('a') ? 'A' : tag.endsWith('aa') ? 'AA' : 'AAA';
-                                                    const sc = tag.match(/\d+\.\d+\.\d+/)?.[0] || '';
-                                                    return `SC ${sc} Level ${level}`;
-                                                  })
-                                                  .join(', ')}
-                                            </Typography>
-                                            <Typography component="h6" variant="subtitle2" gutterBottom>
-                                              AXE Core Check:
-                                            </Typography>
-                                            <Typography paragraph>
-                                              {nonApplicable.id}
-                                            </Typography>
-                                            <Typography component="h6" variant="subtitle2" gutterBottom>
-                                              Description:
-                                            </Typography>
-                                            <Typography>
-                                              {nonApplicable.description}
-                                            </Typography>
-                                          </AccordionDetails>
-                                        </Accordion>
-                                      ))}
-                                    </AccordionDetails>
-                                  </Accordion>
-                                </Box>
-                              )}
-                              {showLinkDiscovery && result.links.length > 0 && (
-                                <Box sx={{ mt: 2 }}>
-                                  <Typography variant="h6" gutterBottom>
-                                    New unique links found ({result.links.length}):
-                                  </Typography>
-                                  <List>
-                                    {result.links.map((link, linkIndex) => (
-                                      <ListItem key={linkIndex}>
-                                        <ListItemText 
-                                          primary={link}
-                                          sx={{ wordBreak: 'break-all' }}
-                                        />
-                                      </ListItem>
-                                    ))}
-                                  </List>
-                                </Box>
-                              )}
-                            </AccordionDetails>
-                          </Accordion>
-                        ))}
-                      </AccordionDetails>
-                    </Accordion>
-                  ) : (
-                    <List>
-                      {scanResult.results.map((result, index) => (
-                        <React.Fragment key={index}>
-                          <ListItem>
-                            <ListItemText 
-                              primary={
-                                <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                                  <Typography sx={{ wordBreak: 'break-all' }}>{result.url}</Typography>
-                                  {result.error && (
-                                    <Typography color="error" sx={{ ml: 2 }}>
-                                      (Error: {result.error})
-                                    </Typography>
-                                  )}
-                                </Box>
-                              }
-                            />
-                          </ListItem>
-                          {index < scanResult.results.length - 1 && <Divider />}
-                        </React.Fragment>
-                      ))}
-                    </List>
-                  )}
-                </>
+                            </Box>
+                          }
+                        />
+                      </ListItem>
+                      {index < scanResultArray.length - 1 && <Divider />}
+                    </React.Fragment>
+                  ))}
+                </List>
               )}
             </Box>
           )}
