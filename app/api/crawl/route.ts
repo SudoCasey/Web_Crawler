@@ -192,6 +192,25 @@ async function cleanupScreenshots() {
   }
 }
 
+async function cleanupTempDir(tempDir?: string) {
+  const dirToClean = tempDir || path.join(process.cwd(), 'temp');
+  if (fs.existsSync(dirToClean)) {
+    const items = fs.readdirSync(dirToClean);
+    for (const item of items) {
+      const itemPath = path.join(dirToClean, item);
+      try {
+        if (fs.lstatSync(itemPath).isDirectory()) {
+          fs.rmSync(itemPath, { recursive: true, force: true });
+        } else {
+          fs.unlinkSync(itemPath);
+        }
+      } catch (error) {
+        console.error(`Error cleaning up temp item ${itemPath}:`, error);
+      }
+    }
+  }
+}
+
 async function getSitemapUrls(baseUrl: string): Promise<string[]> {
   try {
     const browser = await puppeteer.launch({ headless: "new" });
@@ -323,14 +342,6 @@ async function savePageLocally(page: Page, url: string): Promise<string> {
   }
 
   return tempDir;
-}
-
-async function cleanupTempDir(tempDir: string) {
-  try {
-    fs.rmSync(tempDir, { recursive: true, force: true });
-  } catch (error) {
-    console.error(`Error cleaning up temp directory ${tempDir}:`, error);
-  }
 }
 
 async function runAccessibilityCheckOnLocalCopy(page: Page, tempDir: string, wcagLevels: { A: boolean; AA: boolean; AAA: boolean }): Promise<{
@@ -920,11 +931,15 @@ export async function POST(request: Request) {
         concurrentPages 
       });
 
-      // Clean up old screenshots before starting new scan
+      // Clean up old screenshots and temp files before starting new scan
       if (takeScreenshots) {
         log('Cleaning up old screenshots');
         await cleanupScreenshots();
       }
+      
+      // Always clean up temp directory at the start of a new scan
+      log('Cleaning up temp directory');
+      await cleanupTempDir();
       
       const baseUrl = new URL(url).origin;
       const visited = new Set<string>();

@@ -932,6 +932,7 @@ export default function Home() {
 
     // Prevent starting a new crawl if we're still cleaning up
     if (isLoading || isCleaningUp) {
+      setError('Please wait for the previous scan to finish cleaning up before starting a new one.');
       return;
     }
 
@@ -1000,9 +1001,9 @@ export default function Home() {
               const data = JSON.parse(jsonStr);
               if (data.error) {
                 if (data.error.includes('Browser pool is currently being cleaned up')) {
-                  // If we get a cleanup error, wait a bit and try again
-                  await new Promise(resolve => setTimeout(resolve, 1000));
-                  handleCrawl();
+                  setIsCleaningUp(true);
+                  setError('Please wait for the previous scan to finish cleaning up before starting a new one.');
+                  setIsLoading(false);
                   return;
                 }
                 throw new Error(data.error);
@@ -1127,6 +1128,12 @@ export default function Home() {
                 </Button>
               )}
             </Box>
+
+            {error && (
+              <Alert severity="error" sx={{ mt: 2 }}>
+                {error}
+              </Alert>
+            )}
           </Box>
 
           <TimerDisplay />
