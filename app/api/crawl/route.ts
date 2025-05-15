@@ -80,6 +80,8 @@ interface CrawlResponse {
 // Add browser pool management
 let browserPool: Browser[] = [];
 const MAX_BROWSER_INSTANCES = 3;
+let isCleaningUp = false;
+let cleanupPromise: Promise<void> | null = null;
 
 // Add debug flag at the top of the file
 const DEBUG = false;
@@ -96,6 +98,15 @@ function log(message: string, data?: any) {
 }
 
 async function getBrowser(): Promise<Browser> {
+  // Wait for any ongoing cleanup to complete
+  if (cleanupPromise) {
+    await cleanupPromise;
+  }
+
+  if (isCleaningUp) {
+    throw new Error('Browser pool is currently being cleaned up. Please try again in a moment.');
+  }
+
   if (browserPool.length < MAX_BROWSER_INSTANCES) {
     const browser = await puppeteer.launch({ 
       headless: "new",
@@ -139,14 +150,36 @@ async function getBrowser(): Promise<Browser> {
 }
 
 async function closeAllBrowsers() {
-  for (const browser of browserPool) {
-    try {
-      await browser.close();
-    } catch (error) {
-      console.error('Error closing browser:', error);
-    }
+  if (isCleaningUp) {
+    return cleanupPromise; // Return existing cleanup promise if cleanup is in progress
   }
-  browserPool = [];
+  
+  isCleaningUp = true;
+  console.log('Starting browser cleanup...');
+  
+  cleanupPromise = (async () => {
+    try {
+      const closePromises = browserPool.map(async (browser) => {
+        try {
+          await browser.close();
+          console.log('Successfully closed browser instance');
+        } catch (error) {
+          console.error('Error closing browser:', error);
+        }
+      });
+      
+      await Promise.all(closePromises);
+      browserPool = [];
+      console.log('Browser cleanup completed');
+    } catch (error) {
+      console.error('Error during browser cleanup:', error);
+    } finally {
+      isCleaningUp = false;
+      cleanupPromise = null;
+    }
+  })();
+
+  return cleanupPromise;
 }
 
 async function cleanupScreenshots() {

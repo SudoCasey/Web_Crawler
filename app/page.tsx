@@ -750,6 +750,7 @@ export default function Home() {
   const resultsPerPage = 10;
   const abortControllerRef = useRef<AbortController | null>(null);
   const startTimeRef = useRef<number | null>(null);
+  const [isCleaningUp, setIsCleaningUp] = useState(false);
 
   const handleScreenshotsChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     setTakeScreenshots(event.target.checked);
@@ -917,9 +918,7 @@ export default function Home() {
       abortControllerRef.current = null;
     }
     setIsLoading(false);
-    if (startTimeRef.current) {
-      startTimeRef.current = null;
-    }
+    setIsCleaningUp(true);
     setIsCrawlComplete(true);
     setIsCrawlCancelled(true);
     window.dispatchEvent(new Event('crawl:cancel'));
@@ -928,6 +927,11 @@ export default function Home() {
   const handleCrawl = async () => {
     if (!url) {
       setError('Please enter a URL');
+      return;
+    }
+
+    // Prevent starting a new crawl if we're still cleaning up
+    if (isLoading || isCleaningUp) {
       return;
     }
 
@@ -979,7 +983,10 @@ export default function Home() {
       try {
         while (true) {
           const { done, value } = await reader.read();
-          if (done) break;
+          if (done) {
+            setIsCleaningUp(false);
+            break;
+          }
           
           buffer += new TextDecoder().decode(value);
           
@@ -991,6 +998,15 @@ export default function Home() {
             const jsonStr = buffer.slice(startIndex, endIndex);
             try {
               const data = JSON.parse(jsonStr);
+              if (data.error) {
+                if (data.error.includes('Browser pool is currently being cleaned up')) {
+                  // If we get a cleanup error, wait a bit and try again
+                  await new Promise(resolve => setTimeout(resolve, 1000));
+                  handleCrawl();
+                  return;
+                }
+                throw new Error(data.error);
+              }
               if (data.newResults) {
                 // Merge new results into the map
                 setScanResultMap(prevMap => {
@@ -1019,6 +1035,7 @@ export default function Home() {
                 setShowCompletion(true);
                 setIsCrawlComplete(true);
                 setIsLoading(false);
+                setIsCleaningUp(false);
               }
             } catch (e) {
               console.error('Error parsing JSON:', e);
@@ -1033,8 +1050,12 @@ export default function Home() {
         if (error instanceof Error && error.name === 'AbortError') {
           console.log('Crawl cancelled by user');
           window.dispatchEvent(new Event('crawl:cancel'));
+          // Reset cleanup state when connection is aborted
+          setIsCleaningUp(false);
         } else {
           console.error('Error crawling website:', error);
+          setError(error instanceof Error ? error.message : 'An unknown error occurred');
+          setIsCleaningUp(false);
         }
       } finally {
         reader.releaseLock();
@@ -1043,8 +1064,12 @@ export default function Home() {
       if (error instanceof Error && error.name === 'AbortError') {
         console.log('Crawl cancelled by user');
         window.dispatchEvent(new Event('crawl:cancel'));
+        // Reset cleanup state when connection is aborted
+        setIsCleaningUp(false);
       } else {
         console.error('Error crawling website:', error);
+        setError(error instanceof Error ? error.message : 'An unknown error occurred');
+        setIsCleaningUp(false);
       }
     } finally {
       setIsLoading(false);
@@ -1085,16 +1110,17 @@ export default function Home() {
               <Button
                 variant="contained"
                 onClick={handleCrawl}
-                disabled={isLoading}
+                disabled={isLoading || isCleaningUp}
                 sx={{ flex: 1 }}
               >
-                {isLoading ? 'Crawling...' : 'Start Crawl'}
+                {isLoading ? 'Crawling...' : isCleaningUp ? 'Cleaning up...' : 'Start Crawl'}
               </Button>
               {isLoading && (
                 <Button
                   variant="outlined"
                   color="error"
                   onClick={handleCancel}
+                  disabled={isCleaningUp}
                   sx={{ flex: 1 }}
                 >
                   Cancel Scan
