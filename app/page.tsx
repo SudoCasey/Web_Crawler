@@ -651,11 +651,17 @@ const TimerDisplay = React.memo(function TimerDisplay() {
   // Subscribe to crawl events
   useEffect(() => {
     const handleCrawlStart = () => {
+      // Reset all timer state
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+      startTimeRef.current = Date.now();
+      setElapsed(0);
       setIsLoading(true);
       setIsCrawlCancelled(false);
-      if (!startTimeRef.current) {
-        startTimeRef.current = Date.now();
-      }
+      
+      // Start new timer
       timerRef.current = setInterval(() => {
         const now = Date.now();
         const elapsedMs = now - (startTimeRef.current || now);
@@ -669,8 +675,6 @@ const TimerDisplay = React.memo(function TimerDisplay() {
         clearInterval(timerRef.current);
         timerRef.current = null;
       }
-      startTimeRef.current = null;
-      setElapsed(0);
     };
 
     const handleCrawlCancel = () => {
@@ -699,7 +703,8 @@ const TimerDisplay = React.memo(function TimerDisplay() {
     };
   }, []);
 
-  if (!isLoading && elapsed === 0) return null;
+  // Only hide the timer if we haven't started yet
+  if (!startTimeRef.current && elapsed === 0) return null;
 
   // Format seconds as HH:MM:SS
   const formatTime = (seconds: number) => {
