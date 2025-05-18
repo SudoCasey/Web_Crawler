@@ -179,6 +179,7 @@ interface CrawlResult {
         html: string;
         target: string[];
         failureSummary: string;
+        screenshot?: string;
       }>;
     }>;
     passes: Array<{
@@ -397,13 +398,30 @@ const ScannedPageAccordion = React.memo(function ScannedPageAccordion({
                               overflowX: 'auto',
                               fontFamily: 'monospace',
                               whiteSpace: 'pre-wrap',
-                              wordBreak: 'break-word'
+                              wordBreak: 'break-all'
                             }}>
                               {node.html}
                             </Typography>
                             <Typography variant="body2" color="error" sx={{ mt: 1 }}>
                               {node.failureSummary}
                             </Typography>
+                            {node.screenshot && (
+                              <Box sx={{ mt: 2, mb: 2 }}>
+                                <Typography variant="body2" gutterBottom>
+                                  Screenshot of the violation:
+                                </Typography>
+                                <img 
+                                  src={node.screenshot} 
+                                  alt={`Screenshot of ${violation.id} violation`}
+                                  style={{ 
+                                    maxWidth: '100%', 
+                                    height: 'auto',
+                                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                                    borderRadius: '4px'
+                                  }}
+                                />
+                              </Box>
+                            )}
                           </Box>
                         ))}
                       </Box>

@@ -45,6 +45,7 @@ interface CrawlResult {
         html: string;
         target: string[];
         failureSummary: string;
+        screenshot?: string;
       }>;
     }>;
     passes: Array<{
@@ -333,6 +334,85 @@ async function savePageLocally(page: Page, url: string): Promise<string> {
   return tempDir;
 }
 
+// Add new function to capture element screenshots
+async function captureElementScreenshot(page: Page, selector: string): Promise<string | undefined> {
+  try {
+    const element = await page.$(selector);
+    if (!element) return undefined;
+
+    const screenshotDir = path.join(process.cwd(), 'public', 'violation-screenshots');
+    if (!fs.existsSync(screenshotDir)) {
+      fs.mkdirSync(screenshotDir, { recursive: true });
+    }
+
+    const filename = `${generateSafeFilename(selector)}.png`;
+    const fullPath = path.join(screenshotDir, filename);
+
+    // Get element position and size
+    const box = await element.boundingBox();
+    if (!box) return undefined;
+
+    // Add highlight to the element
+    await page.evaluate((sel) => {
+      const element = document.querySelector(sel) as HTMLElement;
+      if (element) {
+        element.style.outline = '3px dashed #ff0000';
+        element.style.outlineOffset = '2px';
+        element.style.position = 'relative';
+        
+        // Create and add the label
+        const label = document.createElement('div');
+        label.textContent = 'Accessibility Violation';
+        label.style.position = 'absolute';
+        label.style.top = '-25px';
+        label.style.left = '0';
+        label.style.background = '#ff0000';
+        label.style.color = 'white';
+        label.style.padding = '2px 8px';
+        label.style.fontSize = '12px';
+        label.style.borderRadius = '3px';
+        label.style.zIndex = '1000';
+        
+        element.parentNode?.insertBefore(label, element);
+      }
+    }, selector);
+
+    // Add padding around the element
+    const padding = 20;
+    await page.screenshot({
+      path: fullPath,
+      clip: {
+        x: Math.max(0, box.x - padding),
+        y: Math.max(0, box.y - padding - 25),
+        width: box.width + (padding * 2),
+        height: box.height + (padding * 2) + 25
+      }
+    });
+
+    // Remove the highlight and label
+    await page.evaluate((sel) => {
+      const element = document.querySelector(sel) as HTMLElement;
+      if (element) {
+        element.style.outline = '';
+        element.style.outlineOffset = '';
+        element.style.position = '';
+        
+        // Remove the label
+        const label = element.previousElementSibling;
+        if (label && label.textContent === 'Accessibility Violation') {
+          label.remove();
+        }
+      }
+    }, selector);
+
+    return `/violation-screenshots/${filename}`;
+  } catch (error) {
+    console.error('Error capturing element screenshot:', error);
+    return undefined;
+  }
+}
+
+// Modify the runAccessibilityCheckOnLocalCopy function
 async function runAccessibilityCheckOnLocalCopy(page: Page, tempDir: string, wcagLevels: { A: boolean; AA: boolean; AAA: boolean }): Promise<{
   violations: any[];
   passes: any[];
@@ -345,7 +425,12 @@ async function runAccessibilityCheckOnLocalCopy(page: Page, tempDir: string, wca
   let browser: Browser | null = null;
   
   try {
-    // Create a new browser instance specifically for the local copy
+    // First save the page locally
+    const tempDirPath = await savePageLocally(page, tempDir);
+    const localUrl = `file://${path.join(tempDirPath, 'index.html')}`;
+    console.log(`Loading local file: ${localUrl}`);
+
+    // Create a new browser instance for the local copy
     browser = await puppeteer.launch({ 
       headless: "new",
       args: [
@@ -378,8 +463,8 @@ async function runAccessibilityCheckOnLocalCopy(page: Page, tempDir: string, wca
         '--window-size=1920,1080'
       ],
       ignoreHTTPSErrors: true,
-      timeout: 120000, // Increased timeout
-      protocolTimeout: 120000 // Increased protocol timeout
+      timeout: 120000,
+      protocolTimeout: 120000
     });
 
     // Create a new page for the local copy
@@ -389,10 +474,7 @@ async function runAccessibilityCheckOnLocalCopy(page: Page, tempDir: string, wca
     await localPage.setDefaultTimeout(120000);
     await localPage.setDefaultNavigationTimeout(120000);
 
-    // Load the local HTML file
-    const localUrl = `file://${path.join(tempDir, 'index.html')}`;
-    console.log(`Loading local file: ${localUrl}`);
-    
+    // Load the local copy
     const response = await localPage.goto(localUrl, { 
       waitUntil: 'networkidle0',
       timeout: 120000 
@@ -404,25 +486,21 @@ async function runAccessibilityCheckOnLocalCopy(page: Page, tempDir: string, wca
 
     // Enhanced page load verification with increased timeouts
     await Promise.all([
-      // Wait for the page to be fully loaded
       localPage.waitForFunction(() => {
         return document.readyState === 'complete';
       }, { timeout: 30000 }),
       
-      // Wait for any pending network requests
       localPage.waitForFunction(() => {
         return window.performance.getEntriesByType('resource')
           .every(resource => (resource as PerformanceResourceTiming).responseEnd > 0);
       }, { timeout: 30000 }),
       
-      // Wait for any pending animations
       localPage.waitForFunction(() => {
         return !document.querySelector('*[style*="animation"]');
       }, { timeout: 15000 }).catch(() => {
         console.log('Animation timeout, continuing anyway...');
       }),
       
-      // Wait for any pending images
       localPage.waitForFunction(() => {
         return Array.from(document.images).every(img => img.complete);
       }, { timeout: 30000 }).catch(() => {
@@ -430,13 +508,13 @@ async function runAccessibilityCheckOnLocalCopy(page: Page, tempDir: string, wca
       })
     ]);
 
-    // Inject axe-core
+    // Inject axe-core into the local copy
     await localPage.addScriptTag({
       content: axeCoreSource,
       id: 'axe-core'
     });
 
-    // Wait for axe to be available with increased timeout
+    // Wait for axe to be available
     await localPage.waitForFunction(() => {
       return typeof window.axe !== 'undefined';
     }, { timeout: 30000 });
@@ -453,12 +531,12 @@ async function runAccessibilityCheckOnLocalCopy(page: Page, tempDir: string, wca
           { id: 'meta-viewport', enabled: true }
         ],
         performanceTimer: true,
-        pingWaitTime: 2000, // Increased wait time
+        pingWaitTime: 2000,
         resultTypes: ['violations', 'passes', 'incomplete', 'inapplicable']
       });
     });
 
-    // Run the analysis with increased timeout
+    // Run the analysis on the local copy
     const results = await Promise.race([
       localPage.evaluate(() => {
         return new Promise<{ 
@@ -499,6 +577,22 @@ async function runAccessibilityCheckOnLocalCopy(page: Page, tempDir: string, wca
       )
     ]);
 
+    // Capture screenshots for violations from the local copy
+    for (const violation of results.violations) {
+      for (const node of violation.nodes) {
+        try {
+          // Convert target array to CSS selector
+          const selector = node.target.join(' > ');
+          const screenshot = await captureElementScreenshot(localPage, selector);
+          if (screenshot) {
+            node.screenshot = screenshot;
+          }
+        } catch (error) {
+          console.error('Error capturing violation screenshot:', error);
+        }
+      }
+    }
+
     // Filter results based on WCAG levels
     const filterByWcagLevel = (result: any) => {
       const tags = result.tags || [];
@@ -534,10 +628,8 @@ async function runAccessibilityCheckOnLocalCopy(page: Page, tempDir: string, wca
     };
   } catch (error) {
     console.error('Accessibility check failed:', error);
-    // Instead of returning empty results, throw the error to be handled by the caller
     throw error;
   } finally {
-    // Ensure proper cleanup in the finally block
     if (localPage) {
       try {
         await localPage.close();
@@ -778,8 +870,9 @@ async function crawlPage(
     let accessibilityResults: CrawlResult['accessibilityResults'] | undefined;
     if (checkAccessibility && !pageClosed) {
       try {
-        // Save the page locally
-        const tempDir = await savePageLocally(page, url);
+        // Create temp directory for accessibility check
+        const tempDir = path.join(process.cwd(), 'temp', crypto.randomBytes(16).toString('hex'));
+        fs.mkdirSync(tempDir, { recursive: true });
         
         try {
           // Run accessibility check on the local copy
