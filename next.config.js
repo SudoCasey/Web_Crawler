@@ -4,6 +4,9 @@ const nextConfig = {
   images: {
     domains: ['localhost'],
   },
+  experimental: {
+    serverComponentsExternalPackages: ['puppeteer-core', 'puppeteer'],
+  },
 }
 
 module.exports = nextConfig 

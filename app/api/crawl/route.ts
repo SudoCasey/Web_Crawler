@@ -8,6 +8,11 @@ import { readFileSync } from 'fs';
 import { promisify } from 'util';
 import { exec } from 'child_process';
 
+// Add runtime configuration
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const maxDuration = 300; // 5 minutes
+
 interface CrawlRequest {
   url: string;
   takeScreenshots: boolean;
@@ -115,28 +120,6 @@ async function getBrowser(): Promise<Browser> {
         '--disable-setuid-sandbox',
         '--disable-web-security',
         '--disable-features=IsolateOrigins,site-per-process',
-        '--disable-http2',
-        '--disable-gpu',
-        '--disable-dev-shm-usage',
-        '--disable-software-rasterizer',
-        '--disable-extensions',
-        '--disable-default-apps',
-        '--disable-popup-blocking',
-        '--disable-notifications',
-        '--disable-background-timer-throttling',
-        '--disable-backgrounding-occluded-windows',
-        '--disable-renderer-backgrounding',
-        '--disable-background-networking',
-        '--disable-breakpad',
-        '--disable-component-extensions-with-background-pages',
-        '--disable-features=TranslateUI,BlinkGenPropertyTrees',
-        '--disable-ipc-flooding-protection',
-        '--disable-prompt-on-repost',
-        '--metrics-recording-only',
-        '--no-first-run',
-        '--safebrowsing-disable-auto-update',
-        '--password-store=basic',
-        '--use-mock-keychain',
         '--window-size=1920,1080'
       ],
       ignoreHTTPSErrors: true,
@@ -256,10 +239,16 @@ declare global {
 }
 
 // Read axe-core source at runtime instead of importing it
-const axeCoreSource = readFileSync(
-  path.join(process.cwd(), 'node_modules', 'axe-core', 'axe.min.js'),
-  'utf-8'
-);
+let axeCoreSource: string;
+try {
+  axeCoreSource = readFileSync(
+    path.join(process.cwd(), 'node_modules', 'axe-core', 'axe.min.js'),
+    'utf-8'
+  );
+} catch (error) {
+  console.error('Error loading axe-core:', error);
+  axeCoreSource = ''; // Empty string as fallback
+}
 
 const execAsync = promisify(exec);
 
@@ -626,23 +615,8 @@ async function crawlPage(
     await page.setUserAgent(userAgent);
     
     // Configure page to handle redirects and dialogs
-    await page.setRequestInterception(true);
-    page.on('request', (request: HTTPRequest) => {
-      if (!request.url().startsWith('http')) {
-        request.abort();
-        return;
-      }
-      const headers = {
-        ...request.headers(),
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
-        'Cache-Control': 'no-cache',
-        'Pragma': 'no-cache',
-        'User-Agent': userAgent
-      };
-      request.continue({ headers });
-    });
-
+    await page.setRequestInterception(false); // Disable request interception
+    
     // Handle JavaScript dialogs
     page.on('dialog', async (dialog: Dialog) => {
       await dialog.dismiss();
@@ -651,7 +625,7 @@ async function crawlPage(
     // Set a longer timeout and wait until network is idle
     log(`Navigating to ${url}`);
     const response = await page.goto(url, { 
-      waitUntil: 'networkidle0',
+      waitUntil: 'domcontentloaded', // Changed from networkidle0 to domcontentloaded
       timeout
     });
 
@@ -735,12 +709,27 @@ async function crawlPage(
     }
 
     // Wait for the page to be fully loaded
-    await page.waitForFunction(() => {
-      return document.readyState === 'complete';
-    }, { timeout: 5000 });
+    try {
+      await Promise.race([
+        page.waitForFunction(() => {
+          return document.readyState === 'complete';
+        }, { timeout: 30000 }), // Increased from 5000ms to 30000ms
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Page load timeout')), 30000)
+        )
+      ]);
+    } catch (error) {
+      console.log(`Page load timeout for ${url}, continuing anyway...`);
+      // Continue execution even if timeout occurs
+    }
 
-    // Wait for any dynamic content to load
-    await page.waitForTimeout(2000);
+    // Wait for any dynamic content to load with increased timeout
+    try {
+      await page.waitForTimeout(5000); // Increased from 2000ms to 5000ms
+    } catch (error) {
+      console.log(`Dynamic content load timeout for ${url}, continuing anyway...`);
+      // Continue execution even if timeout occurs
+    }
 
     let screenshotPath: string | undefined;
     if (takeScreenshots) {
