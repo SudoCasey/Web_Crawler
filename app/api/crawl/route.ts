@@ -423,228 +423,288 @@ async function runAccessibilityCheckOnLocalCopy(page: Page, tempDir: string, wca
   console.log('Starting accessibility check on local copy...');
   let localPage: Page | null = null;
   let browser: Browser | null = null;
+  let retryCount = 0;
+  const maxRetries = 3;
   
-  try {
-    // First save the page locally
-    const tempDirPath = await savePageLocally(page, tempDir);
-    const localUrl = `file://${path.join(tempDirPath, 'index.html')}`;
-    console.log(`Loading local file: ${localUrl}`);
+  while (retryCount < maxRetries) {
+    try {
+      // First save the page locally
+      const tempDirPath = await savePageLocally(page, tempDir);
+      const localUrl = `file://${path.join(tempDirPath, 'index.html')}`;
+      console.log(`Loading local file: ${localUrl}`);
 
-    // Create a new browser instance for the local copy
-    browser = await puppeteer.launch({ 
-      headless: "new",
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-web-security',
-        '--disable-features=IsolateOrigins,site-per-process',
-        '--disable-http2',
-        '--disable-gpu',
-        '--disable-dev-shm-usage',
-        '--disable-software-rasterizer',
-        '--disable-extensions',
-        '--disable-default-apps',
-        '--disable-popup-blocking',
-        '--disable-notifications',
-        '--disable-background-timer-throttling',
-        '--disable-backgrounding-occluded-windows',
-        '--disable-renderer-backgrounding',
-        '--disable-background-networking',
-        '--disable-breakpad',
-        '--disable-component-extensions-with-background-pages',
-        '--disable-features=TranslateUI,BlinkGenPropertyTrees',
-        '--disable-ipc-flooding-protection',
-        '--disable-prompt-on-repost',
-        '--metrics-recording-only',
-        '--no-first-run',
-        '--safebrowsing-disable-auto-update',
-        '--password-store=basic',
-        '--use-mock-keychain',
-        '--window-size=1920,1080'
-      ],
-      ignoreHTTPSErrors: true,
-      timeout: 120000,
-      protocolTimeout: 120000
-    });
-
-    // Create a new page for the local copy
-    localPage = await browser.newPage();
-    
-    // Set longer timeouts for local file loading
-    await localPage.setDefaultTimeout(120000);
-    await localPage.setDefaultNavigationTimeout(120000);
-
-    // Load the local copy
-    const response = await localPage.goto(localUrl, { 
-      waitUntil: 'networkidle0',
-      timeout: 120000 
-    });
-
-    if (!response) {
-      throw new Error('Failed to load local file');
-    }
-
-    // Enhanced page load verification with increased timeouts
-    await Promise.all([
-      localPage.waitForFunction(() => {
-        return document.readyState === 'complete';
-      }, { timeout: 30000 }),
-      
-      localPage.waitForFunction(() => {
-        return window.performance.getEntriesByType('resource')
-          .every(resource => (resource as PerformanceResourceTiming).responseEnd > 0);
-      }, { timeout: 30000 }),
-      
-      localPage.waitForFunction(() => {
-        return !document.querySelector('*[style*="animation"]');
-      }, { timeout: 15000 }).catch(() => {
-        console.log('Animation timeout, continuing anyway...');
-      }),
-      
-      localPage.waitForFunction(() => {
-        return Array.from(document.images).every(img => img.complete);
-      }, { timeout: 30000 }).catch(() => {
-        console.log('Image load timeout, continuing anyway...');
-      })
-    ]);
-
-    // Inject axe-core into the local copy
-    await localPage.addScriptTag({
-      content: axeCoreSource,
-      id: 'axe-core'
-    });
-
-    // Wait for axe to be available
-    await localPage.waitForFunction(() => {
-      return typeof window.axe !== 'undefined';
-    }, { timeout: 30000 });
-
-    // Configure axe-core
-    await localPage.evaluate(() => {
-      window.axe.configure({
-        rules: [
-          { id: 'color-contrast', enabled: true },
-          { id: 'document-title', enabled: true },
-          { id: 'html-has-lang', enabled: true },
-          { id: 'image-alt', enabled: true },
-          { id: 'link-name', enabled: true },
-          { id: 'meta-viewport', enabled: true }
+      // Create a new browser instance for the local copy
+      browser = await puppeteer.launch({ 
+        headless: "new",
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-web-security',
+          '--disable-features=IsolateOrigins,site-per-process',
+          '--disable-http2',
+          '--disable-gpu',
+          '--disable-dev-shm-usage',
+          '--disable-software-rasterizer',
+          '--disable-extensions',
+          '--disable-default-apps',
+          '--disable-popup-blocking',
+          '--disable-notifications',
+          '--disable-background-timer-throttling',
+          '--disable-backgrounding-occluded-windows',
+          '--disable-renderer-backgrounding',
+          '--disable-background-networking',
+          '--disable-breakpad',
+          '--disable-component-extensions-with-background-pages',
+          '--disable-features=TranslateUI,BlinkGenPropertyTrees',
+          '--disable-ipc-flooding-protection',
+          '--disable-prompt-on-repost',
+          '--metrics-recording-only',
+          '--no-first-run',
+          '--safebrowsing-disable-auto-update',
+          '--password-store=basic',
+          '--use-mock-keychain',
+          '--window-size=1920,1080'
         ],
-        performanceTimer: true,
-        pingWaitTime: 2000,
-        resultTypes: ['violations', 'passes', 'incomplete', 'inapplicable']
+        ignoreHTTPSErrors: true,
+        timeout: 120000,
+        protocolTimeout: 120000
       });
-    });
 
-    // Run the analysis on the local copy
-    const results = await Promise.race([
-      localPage.evaluate(() => {
-        return new Promise<{ 
-          violations: any[]; 
-          passes: any[]; 
-          incomplete: any[];
-          inapplicable: any[];
-        }>((resolve, reject) => {
-          if (!window.axe) {
-            reject(new Error('axe-core not available'));
-            return;
-          }
+      // Create a new page for the local copy
+      localPage = await browser.newPage();
+      
+      // Set longer timeouts for local file loading
+      await localPage.setDefaultTimeout(120000);
+      await localPage.setDefaultNavigationTimeout(120000);
 
-          window.axe.run(document, {
-            resultTypes: ['violations', 'passes', 'incomplete', 'inapplicable'],
-            pingWaitTime: 2000,
-            performanceTimer: true
-          }).then((results: any) => {
-            resolve({
-              violations: results.violations || [],
-              passes: results.passes || [],
-              incomplete: results.incomplete || [],
-              inapplicable: results.inapplicable || []
-            });
-          }).catch((error: Error) => {
-            console.error('Error during analysis:', error);
-            reject(error);
+      // Verify the file exists before trying to load it
+      if (!fs.existsSync(path.join(tempDirPath, 'index.html'))) {
+        throw new Error('Local HTML file not found');
+      }
+
+      // Load the local copy with retry logic
+      let response = null;
+      let loadAttempts = 0;
+      const maxLoadAttempts = 3;
+
+      while (loadAttempts < maxLoadAttempts) {
+        try {
+          response = await localPage.goto(localUrl, { 
+            waitUntil: 'networkidle0',
+            timeout: 120000 
           });
+          if (response) break;
+        } catch (error) {
+          loadAttempts++;
+          if (loadAttempts === maxLoadAttempts) throw error;
+          await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds before retry
+        }
+      }
+
+      if (!response) {
+        throw new Error('Failed to load local file after multiple attempts');
+      }
+
+      // Enhanced page load verification with increased timeouts and better error handling
+      try {
+        await Promise.all([
+          localPage.waitForFunction(() => {
+            return document.readyState === 'complete';
+          }, { timeout: 30000 }),
+          
+          localPage.waitForFunction(() => {
+            return window.performance.getEntriesByType('resource')
+              .every(resource => (resource as PerformanceResourceTiming).responseEnd > 0);
+          }, { timeout: 30000 }),
+          
+          localPage.waitForFunction(() => {
+            return !document.querySelector('*[style*="animation"]');
+          }, { timeout: 15000 }).catch(() => {
+            console.log('Animation timeout, continuing anyway...');
+          }),
+          
+          localPage.waitForFunction(() => {
+            return Array.from(document.images).every(img => img.complete);
+          }, { timeout: 30000 }).catch(() => {
+            console.log('Image load timeout, continuing anyway...');
+          })
+        ]);
+      } catch (error) {
+        console.log('Page load verification timeout, continuing with accessibility check...');
+      }
+
+      // Inject axe-core into the local copy
+      await localPage.addScriptTag({
+        content: axeCoreSource,
+        id: 'axe-core'
+      });
+
+      // Wait for axe to be available with timeout
+      await localPage.waitForFunction(() => {
+        return typeof window.axe !== 'undefined';
+      }, { timeout: 30000 });
+
+      // Configure axe-core
+      await localPage.evaluate(() => {
+        window.axe.configure({
+          rules: [
+            { id: 'color-contrast', enabled: true },
+            { id: 'document-title', enabled: true },
+            { id: 'html-has-lang', enabled: true },
+            { id: 'image-alt', enabled: true },
+            { id: 'link-name', enabled: true },
+            { id: 'meta-viewport', enabled: true }
+          ],
+          performanceTimer: true,
+          pingWaitTime: 2000,
+          resultTypes: ['violations', 'passes', 'incomplete', 'inapplicable']
         });
-      }),
-      new Promise<{ 
-        violations: any[]; 
-        passes: any[]; 
+      });
+
+      // Run the analysis on the local copy with timeout
+      type AxeResults = {
+        violations: any[];
+        passes: any[];
         incomplete: any[];
         inapplicable: any[];
-      }>((_, reject) => 
-        setTimeout(() => reject(new Error('Analysis timed out')), 60000)
-      )
-    ]);
+      };
 
-    // Capture screenshots for violations from the local copy
-    for (const violation of results.violations) {
-      for (const node of violation.nodes) {
-        try {
-          // Convert target array to CSS selector
-          const selector = node.target.join(' > ');
-          const screenshot = await captureElementScreenshot(localPage, selector);
-          if (screenshot) {
-            node.screenshot = screenshot;
+      const results = await Promise.race<AxeResults>([
+        localPage.evaluate(() => {
+          return new Promise<AxeResults>((resolve, reject) => {
+            if (!window.axe) {
+              reject(new Error('axe-core not available'));
+              return;
+            }
+
+            window.axe.run(document, {
+              resultTypes: ['violations', 'passes', 'incomplete', 'inapplicable'],
+              pingWaitTime: 2000,
+              performanceTimer: true
+            }).then((results: any) => {
+              resolve({
+                violations: results.violations || [],
+                passes: results.passes || [],
+                incomplete: results.incomplete || [],
+                inapplicable: results.inapplicable || []
+              });
+            }).catch((error: Error) => {
+              reject(error);
+            });
+          });
+        }),
+        new Promise<AxeResults>((_, reject) => 
+          setTimeout(() => reject(new Error('Accessibility check timeout')), 60000)
+        )
+      ]);
+
+      // Capture screenshots for violations
+      for (const violation of results.violations) {
+        for (const node of violation.nodes) {
+          try {
+            // Convert target array to CSS selector
+            const selector = node.target.join(' > ');
+            const screenshot = await captureElementScreenshot(localPage, selector);
+            if (screenshot) {
+              node.screenshot = screenshot;
+            }
+          } catch (error) {
+            console.error('Error capturing violation screenshot:', error);
           }
-        } catch (error) {
-          console.error('Error capturing violation screenshot:', error);
+        }
+      }
+
+      // Filter results based on WCAG levels
+      const filterByWcagLevel = (result: any) => {
+        const tags = result.tags || [];
+        const wcagTags = tags.filter((tag: string) => tag.startsWith('wcag2'));
+        
+        if (wcagTags.length === 0) return true; // Include results without WCAG tags
+        
+        return wcagTags.some((tag: string) => {
+          if (tag.endsWith('a') && wcagLevels.A) return true;
+          if (tag.endsWith('aa') && wcagLevels.AA) return true;
+          if (tag.endsWith('aaa') && wcagLevels.AAA) return true;
+          return false;
+        });
+      };
+
+      // Map inapplicable results to nonApplicable and filter
+      const nonApplicable = results.inapplicable
+        .filter(filterByWcagLevel)
+        .map(result => ({
+          id: result.id,
+          impact: result.impact,
+          description: result.description,
+          help: result.help,
+          helpUrl: result.helpUrl,
+          tags: result.tags
+        }));
+
+      return {
+        violations: results.violations.filter(filterByWcagLevel),
+        passes: results.passes.filter(filterByWcagLevel),
+        incomplete: results.incomplete.filter(filterByWcagLevel),
+        nonApplicable
+      };
+    } catch (error) {
+      console.error(`Attempt ${retryCount + 1} failed:`, error);
+      retryCount++;
+      
+      if (retryCount === maxRetries) {
+        return {
+          violations: [],
+          passes: [],
+          incomplete: [],
+          nonApplicable: [],
+          error: `Failed to run accessibility check after ${maxRetries} attempts: ${error instanceof Error ? error.message : String(error)}`
+        };
+      }
+      
+      // Clean up before retry
+      if (localPage) {
+        try {
+          await localPage.close();
+        } catch (e) {
+          console.error('Error closing page:', e);
+        }
+      }
+      if (browser) {
+        try {
+          await browser.close();
+        } catch (e) {
+          console.error('Error closing browser:', e);
+        }
+      }
+      
+      // Wait before retrying
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    } finally {
+      // Clean up
+      if (localPage) {
+        try {
+          await localPage.close();
+        } catch (e) {
+          console.error('Error closing page:', e);
+        }
+      }
+      if (browser) {
+        try {
+          await browser.close();
+        } catch (e) {
+          console.error('Error closing browser:', e);
         }
       }
     }
-
-    // Filter results based on WCAG levels
-    const filterByWcagLevel = (result: any) => {
-      const tags = result.tags || [];
-      const wcagTags = tags.filter((tag: string) => tag.startsWith('wcag2'));
-      
-      if (wcagTags.length === 0) return true; // Include results without WCAG tags
-      
-      return wcagTags.some((tag: string) => {
-        if (tag.endsWith('a') && wcagLevels.A) return true;
-        if (tag.endsWith('aa') && wcagLevels.AA) return true;
-        if (tag.endsWith('aaa') && wcagLevels.AAA) return true;
-        return false;
-      });
-    };
-
-    // Map inapplicable results to nonApplicable and filter
-    const nonApplicable = results.inapplicable
-      .filter(filterByWcagLevel)
-      .map(result => ({
-        id: result.id,
-        impact: result.impact,
-        description: result.description,
-        help: result.help,
-        helpUrl: result.helpUrl,
-        tags: result.tags
-      }));
-
-    return {
-      violations: results.violations.filter(filterByWcagLevel),
-      passes: results.passes.filter(filterByWcagLevel),
-      incomplete: results.incomplete.filter(filterByWcagLevel),
-      nonApplicable
-    };
-  } catch (error) {
-    console.error('Accessibility check failed:', error);
-    throw error;
-  } finally {
-    if (localPage) {
-      try {
-        await localPage.close();
-      } catch (e) {
-        console.error('Error closing local page:', e);
-      }
-    }
-    if (browser) {
-      try {
-        await browser.close();
-      } catch (e) {
-        console.error('Error closing browser:', e);
-      }
-    }
   }
+
+  return {
+    violations: [],
+    passes: [],
+    incomplete: [],
+    nonApplicable: [],
+    error: 'Failed to run accessibility check after all retries'
+  };
 }
 
 // Add common user agents
@@ -1045,66 +1105,142 @@ export async function POST(request: Request) {
             
             const batch = urlsToCrawl.slice(i, i + concurrentPages);
             log(`Processing batch of ${batch.length} URLs with concurrency ${concurrentPages}`);
-            const batchResults = await Promise.all(
-              batch.map(urlToCrawl => 
-                !visited.has(urlToCrawl) ? crawlPage(urlToCrawl, takeScreenshots, visited, baseUrl, true, checkAccessibility, wcagLevels, increaseTimeout, slowRateLimit) : null
-              )
-            );
             
-            results.push(...batchResults.filter((r): r is CrawlResult => r !== null));
-            log(`Completed batch, total results: ${results.length}`);
-            
-            // Send only new results in intermediate responses
-            await writeResponse({
-              newResults: batchResults.filter((r): r is CrawlResult => r !== null),
-              usedSitemap,
-              isComplete: false,
-              checkedAccessibility: checkAccessibility
-            });
-            
-            if (!usedSitemap) {
-              // Collect all new links from the batch
-              const newLinks = new Set<string>();
-              batchResults.forEach(result => {
-                if (result) {
-                  result.links.forEach(link => {
+            try {
+              // Add timeout for the entire batch
+              const batchResults = await Promise.race<Array<CrawlResult | null>>([
+                Promise.all(
+                  batch.map(async (urlToCrawl) => {
+                    if (visited.has(urlToCrawl)) return null;
+                    
+                    try {
+                      // Add individual page timeout
+                      return await Promise.race([
+                        crawlPage(urlToCrawl, takeScreenshots, visited, baseUrl, true, checkAccessibility, wcagLevels, increaseTimeout, slowRateLimit),
+                        new Promise<CrawlResult>((_, reject) => 
+                          setTimeout(() => reject(new Error('Page crawl timeout')), 180000) // 3 minute timeout per page
+                        )
+                      ]);
+                    } catch (error) {
+                      console.error(`Error crawling ${urlToCrawl}:`, error);
+                      return {
+                        url: urlToCrawl,
+                        links: [],
+                        error: error instanceof Error ? error.message : 'Unknown error during crawl'
+                      };
+                    }
+                  })
+                ),
+                new Promise<Array<CrawlResult | null>>((_, reject) => 
+                  setTimeout(() => reject(new Error('Batch processing timeout')), 300000) // 5 minute timeout for entire batch
+                )
+              ]);
+              
+              const validResults = batchResults.filter((r): r is CrawlResult => r !== null);
+              results.push(...validResults);
+              log(`Completed batch, total results: ${results.length}`);
+              
+              // Send intermediate results immediately
+              await writeResponse({
+                newResults: validResults,
+                usedSitemap,
+                isComplete: false,
+                checkedAccessibility: checkAccessibility,
+                progress: {
+                  current: i + batch.length,
+                  total: urlsToCrawl.length
+                }
+              });
+              
+              if (!usedSitemap) {
+                // Collect all new links from the batch
+                const newLinks = new Set<string>();
+                validResults.forEach((result: CrawlResult) => {
+                  result.links.forEach((link: string) => {
                     if (!visited.has(link)) {
                       newLinks.add(link);
                     }
                   });
-                }
-              });
-              
-              log(`Found ${newLinks.size} new links to crawl`);
-              // Process new links with the specified concurrency
-              const newLinksArray = Array.from(newLinks);
-              for (let j = 0; j < newLinksArray.length; j += concurrentPages) {
-                if (!isClientConnected) {
-                  log('Client disconnected, stopping crawl');
-                  break;
-                }
-                
-                const newBatch = newLinksArray.slice(j, j + concurrentPages);
-                log(`Crawling new batch of ${newBatch.length} links`);
-                const newBatchResults = await Promise.all(
-                  newBatch.map(link => crawlPage(link, takeScreenshots, visited, baseUrl, true, checkAccessibility, wcagLevels, increaseTimeout, slowRateLimit))
-                );
-                
-                results.push(...newBatchResults);
-                
-                // Send only new results in intermediate responses
-                await writeResponse({
-                  newResults: newBatchResults,
-                  usedSitemap,
-                  isComplete: false,
-                  checkedAccessibility: checkAccessibility
                 });
                 
-                // Add a small delay between batches if rate limiting is enabled
-                if (slowRateLimit) {
-                  await delay(1000);
+                log(`Found ${newLinks.size} new links to crawl`);
+                // Process new links with the specified concurrency
+                const newLinksArray = Array.from(newLinks);
+                for (let j = 0; j < newLinksArray.length; j += concurrentPages) {
+                  if (!isClientConnected) {
+                    log('Client disconnected, stopping crawl');
+                    break;
+                  }
+                  
+                  const newBatch = newLinksArray.slice(j, j + concurrentPages);
+                  log(`Crawling new batch of ${newBatch.length} links`);
+                  
+                  try {
+                    // Add timeout for the new batch
+                    const newBatchResults = await Promise.race<CrawlResult[]>([
+                      Promise.all(
+                        newBatch.map(async (link) => {
+                          try {
+                            return await Promise.race([
+                              crawlPage(link, takeScreenshots, visited, baseUrl, true, checkAccessibility, wcagLevels, increaseTimeout, slowRateLimit),
+                              new Promise<CrawlResult>((_, reject) => 
+                                setTimeout(() => reject(new Error('Page crawl timeout')), 180000) // 3 minute timeout per page
+                              )
+                            ]);
+                          } catch (error) {
+                            console.error(`Error crawling ${link}:`, error);
+                            return {
+                              url: link,
+                              links: [],
+                              error: error instanceof Error ? error.message : 'Unknown error during crawl'
+                            };
+                          }
+                        })
+                      ),
+                      new Promise<CrawlResult[]>((_, reject) => 
+                        setTimeout(() => reject(new Error('New batch processing timeout')), 300000) // 5 minute timeout for entire batch
+                      )
+                    ]);
+                    
+                    results.push(...newBatchResults);
+                    
+                    // Send intermediate results immediately
+                    await writeResponse({
+                      newResults: newBatchResults,
+                      usedSitemap,
+                      isComplete: false,
+                      checkedAccessibility: checkAccessibility,
+                      progress: {
+                        current: results.length,
+                        total: urlsToCrawl.length + newLinksArray.length
+                      }
+                    });
+                  } catch (error) {
+                    console.error('Error processing new batch:', error);
+                    await writeResponse({
+                      error: `Error processing batch: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                      progress: {
+                        current: results.length,
+                        total: urlsToCrawl.length + newLinksArray.length
+                      }
+                    });
+                  }
+                  
+                  // Add a small delay between batches if rate limiting is enabled
+                  if (slowRateLimit) {
+                    await delay(1000);
+                  }
                 }
               }
+            } catch (error) {
+              console.error('Error processing batch:', error);
+              await writeResponse({
+                error: `Error processing batch: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                progress: {
+                  current: results.length,
+                  total: urlsToCrawl.length
+                }
+              });
             }
           }
         } else {
