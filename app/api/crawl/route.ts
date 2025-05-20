@@ -176,6 +176,16 @@ async function cleanupScreenshots() {
   }
 }
 
+async function cleanupViolationScreenshots() {
+  const screenshotDir = path.join(process.cwd(), 'public', 'violation-screenshots');
+  if (fs.existsSync(screenshotDir)) {
+    const files = fs.readdirSync(screenshotDir);
+    for (const file of files) {
+      fs.unlinkSync(path.join(screenshotDir, file));
+    }
+  }
+}
+
 async function cleanupTempDir(tempDir?: string) {
   const dirToClean = tempDir || path.join(process.cwd(), 'temp');
   if (fs.existsSync(dirToClean)) {
@@ -259,77 +269,115 @@ async function savePageLocally(page: Page, url: string): Promise<string> {
 
   // Save the HTML
   const html = await page.content();
-  fs.writeFileSync(path.join(tempDir, 'index.html'), html);
-
-  // Save all CSS files
+  
+  // Get all CSS files and their contents before modifying the HTML
   const cssFiles = await page.evaluate(() => {
     return Array.from(document.styleSheets).map(sheet => {
       try {
-        return sheet.href;
-      } catch {
+        if (sheet.href) {
+          return {
+            href: sheet.href,
+            rules: Array.from(sheet.cssRules || []).map(rule => rule.cssText)
+          };
+        } else {
+          // Handle inline stylesheets
+          return {
+            href: null,
+            rules: Array.from(sheet.cssRules || []).map(rule => rule.cssText)
+          };
+        }
+      } catch (e) {
+        console.error('Error accessing stylesheet:', e);
         return null;
       }
-    }).filter((href): href is string => href !== null);
+    }).filter((item): item is { href: string | null; rules: string[] } => item !== null);
   });
 
-  // Filter out known problematic CSS files
-  const filteredCssFiles = cssFiles.filter(cssUrl => {
-    try {
-      const url = new URL(cssUrl);
-      // Skip disallowed and broken CSS files
-      if (url.pathname.includes('/disallowed/') || 
-          url.pathname.includes('brokencss.css')) {
-        return false;
-      }
-      return true;
-    } catch {
-      return false;
-    }
-  });
+  // Create a CSS directory
+  const cssDir = path.join(tempDir, 'css');
+  fs.mkdirSync(cssDir, { recursive: true });
 
-  for (const cssUrl of filteredCssFiles) {
-    try {
-      const response = await page.goto(cssUrl, { 
-        waitUntil: 'networkidle0',
-        timeout: 10000 // Add timeout to prevent hanging
-      });
-      
-      if (response && response.ok()) {
-        const css = await response.text();
-        const cssFilename = path.basename(new URL(cssUrl).pathname);
-        fs.writeFileSync(path.join(tempDir, cssFilename), css);
+  // Save all CSS files and collect their new paths
+  const cssPaths = new Map<string, string>();
+  let cssContent = '';
+
+  // First, add all external CSS
+  for (const cssFile of cssFiles) {
+    if (cssFile.href) {
+      try {
+        const cssUrl = new URL(cssFile.href);
+        const cssFilename = path.basename(cssUrl.pathname) || 'style.css';
+        const cssPath = path.join('css', cssFilename);
+        const fullCssPath = path.join(tempDir, cssPath);
+        
+        // Combine all rules into a single CSS file
+        const fileContent = cssFile.rules.join('\n');
+        fs.writeFileSync(fullCssPath, fileContent);
+        
+        // Store the mapping of original URL to new path
+        cssPaths.set(cssFile.href, cssPath);
+        
+        // Add to combined CSS content
+        cssContent += `/* From ${cssFile.href} */\n${fileContent}\n\n`;
+      } catch (error) {
+        console.error(`Error saving CSS file ${cssFile.href}:`, error);
       }
-    } catch (error) {
-      // Only log errors for non-preflight requests
-      if (!(error instanceof Error && error.message.includes('preflight request'))) {
-        console.error(`Error saving CSS file ${cssUrl}:`, error);
-      }
+    } else {
+      // Handle inline stylesheets
+      cssContent += `/* Inline styles */\n${cssFile.rules.join('\n')}\n\n`;
     }
   }
+
+  // Save the combined CSS file
+  const combinedCssPath = path.join('css', 'combined.css');
+  const fullCombinedCssPath = path.join(tempDir, combinedCssPath);
+  fs.writeFileSync(fullCombinedCssPath, cssContent);
+
+  // Modify the HTML to use the combined CSS file
+  let modifiedHtml = html;
+  
+  // Remove all existing style and link tags
+  modifiedHtml = modifiedHtml.replace(/<style[^>]*>[\s\S]*?<\/style>/g, '');
+  modifiedHtml = modifiedHtml.replace(/<link[^>]*rel=["']stylesheet["'][^>]*>/g, '');
+  
+  // Add the combined CSS file
+  modifiedHtml = modifiedHtml.replace('</head>', `<link rel="stylesheet" href="${combinedCssPath}"></head>`);
 
   // Save all images
   const images = await page.evaluate(() => {
     return Array.from(document.images).map(img => img.src);
   });
 
+  // Create an images directory
+  const imgDir = path.join(tempDir, 'images');
+  fs.mkdirSync(imgDir, { recursive: true });
+
   for (const imgUrl of images) {
     try {
       const response = await page.goto(imgUrl, { 
         waitUntil: 'networkidle0',
-        timeout: 10000 // Add timeout to prevent hanging
+        timeout: 10000
       });
       if (response && response.ok()) {
         const buffer = await response.buffer();
         const imgFilename = path.basename(new URL(imgUrl).pathname);
-        fs.writeFileSync(path.join(tempDir, imgFilename), buffer);
+        const imgPath = path.join('images', imgFilename);
+        const fullImgPath = path.join(tempDir, imgPath);
+        fs.writeFileSync(fullImgPath, buffer);
+        
+        // Update image references in HTML
+        modifiedHtml = modifiedHtml.replace(
+          new RegExp(`src=["']${imgUrl}["']`, 'g'),
+          `src="${imgPath}"`
+        );
       }
     } catch (error) {
-      // Only log errors for non-preflight requests
-      if (!(error instanceof Error && error.message.includes('preflight request'))) {
-        console.error(`Error saving image ${imgUrl}:`, error);
-      }
+      console.error(`Error saving image ${imgUrl}:`, error);
     }
   }
+
+  // Save the final HTML
+  fs.writeFileSync(path.join(tempDir, 'index.html'), modifiedHtml);
 
   return tempDir;
 }
@@ -352,28 +400,54 @@ async function captureElementScreenshot(page: Page, selector: string): Promise<s
     const box = await element.boundingBox();
     if (!box) return undefined;
 
-    // Add highlight to the element
+    // Add highlight to the element using a more reliable approach
     await page.evaluate((sel) => {
       const element = document.querySelector(sel) as HTMLElement;
       if (element) {
+        // Store original styles
+        const originalOutline = element.style.outline;
+        const originalOutlineOffset = element.style.outlineOffset;
+        const originalPosition = element.style.position;
+        
+        // Apply highlight styles
         element.style.outline = '3px dashed #ff0000';
         element.style.outlineOffset = '2px';
         element.style.position = 'relative';
         
-        // Create and add the label
+        // Create a container for the label
+        const container = document.createElement('div');
+        container.style.position = 'absolute';
+        container.style.top = '-25px';
+        container.style.left = '0';
+        container.style.zIndex = '1000';
+        
+        // Create the label
         const label = document.createElement('div');
         label.textContent = 'Accessibility Violation';
-        label.style.position = 'absolute';
-        label.style.top = '-25px';
-        label.style.left = '0';
         label.style.background = '#ff0000';
         label.style.color = 'white';
         label.style.padding = '2px 8px';
         label.style.fontSize = '12px';
         label.style.borderRadius = '3px';
-        label.style.zIndex = '1000';
         
-        element.parentNode?.insertBefore(label, element);
+        // Add label to container
+        container.appendChild(label);
+        
+        // Insert container before the element
+        if (element.parentNode) {
+          element.parentNode.insertBefore(container, element);
+        }
+        
+        // Store references for cleanup
+        (window as any).__violationHighlight = {
+          element,
+          container,
+          originalStyles: {
+            outline: originalOutline,
+            outlineOffset: originalOutlineOffset,
+            position: originalPosition
+          }
+        };
       }
     }, selector);
 
@@ -389,21 +463,24 @@ async function captureElementScreenshot(page: Page, selector: string): Promise<s
       }
     });
 
-    // Remove the highlight and label
-    await page.evaluate((sel) => {
-      const element = document.querySelector(sel) as HTMLElement;
-      if (element) {
-        element.style.outline = '';
-        element.style.outlineOffset = '';
-        element.style.position = '';
+    // Clean up the highlight and label
+    await page.evaluate(() => {
+      const highlight = (window as any).__violationHighlight;
+      if (highlight) {
+        // Restore original styles
+        highlight.element.style.outline = highlight.originalStyles.outline;
+        highlight.element.style.outlineOffset = highlight.originalStyles.outlineOffset;
+        highlight.element.style.position = highlight.originalStyles.position;
         
-        // Remove the label
-        const label = element.previousElementSibling;
-        if (label && label.textContent === 'Accessibility Violation') {
-          label.remove();
+        // Remove the container
+        if (highlight.container && highlight.container.parentNode) {
+          highlight.container.parentNode.removeChild(highlight.container);
         }
+        
+        // Clean up the reference
+        delete (window as any).__violationHighlight;
       }
-    }, selector);
+    });
 
     return `/violation-screenshots/${filename}`;
   } catch (error) {
@@ -441,97 +518,28 @@ async function runAccessibilityCheckOnLocalCopy(page: Page, tempDir: string, wca
           '--disable-setuid-sandbox',
           '--disable-web-security',
           '--disable-features=IsolateOrigins,site-per-process',
-          '--disable-http2',
-          '--disable-gpu',
-          '--disable-dev-shm-usage',
-          '--disable-software-rasterizer',
-          '--disable-extensions',
-          '--disable-default-apps',
-          '--disable-popup-blocking',
-          '--disable-notifications',
-          '--disable-background-timer-throttling',
-          '--disable-backgrounding-occluded-windows',
-          '--disable-renderer-backgrounding',
-          '--disable-background-networking',
-          '--disable-breakpad',
-          '--disable-component-extensions-with-background-pages',
-          '--disable-features=TranslateUI,BlinkGenPropertyTrees',
-          '--disable-ipc-flooding-protection',
-          '--disable-prompt-on-repost',
-          '--metrics-recording-only',
-          '--no-first-run',
-          '--safebrowsing-disable-auto-update',
-          '--password-store=basic',
-          '--use-mock-keychain',
           '--window-size=1920,1080'
         ],
-        ignoreHTTPSErrors: true,
-        timeout: 120000,
-        protocolTimeout: 120000
+        ignoreHTTPSErrors: true
       });
 
       // Create a new page for the local copy
       localPage = await browser.newPage();
       
-      // Set longer timeouts for local file loading
-      await localPage.setDefaultTimeout(120000);
-      await localPage.setDefaultNavigationTimeout(120000);
-
-      // Verify the file exists before trying to load it
-      if (!fs.existsSync(path.join(tempDirPath, 'index.html'))) {
-        throw new Error('Local HTML file not found');
-      }
-
-      // Load the local copy with retry logic
-      let response = null;
-      let loadAttempts = 0;
-      const maxLoadAttempts = 3;
-
-      while (loadAttempts < maxLoadAttempts) {
-        try {
-          response = await localPage.goto(localUrl, { 
-            waitUntil: 'networkidle0',
-            timeout: 120000 
-          });
-          if (response) break;
-        } catch (error) {
-          loadAttempts++;
-          if (loadAttempts === maxLoadAttempts) throw error;
-          await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds before retry
-        }
-      }
+      // Load the local copy
+      const response = await localPage.goto(localUrl, { 
+        waitUntil: 'domcontentloaded',
+        timeout: 30000 
+      });
 
       if (!response) {
-        throw new Error('Failed to load local file after multiple attempts');
+        throw new Error('Failed to load local file');
       }
 
-      // Enhanced page load verification with increased timeouts and better error handling
-      try {
-        await Promise.all([
-          localPage.waitForFunction(() => {
-            return document.readyState === 'complete';
-          }, { timeout: 30000 }),
-          
-          localPage.waitForFunction(() => {
-            return window.performance.getEntriesByType('resource')
-              .every(resource => (resource as PerformanceResourceTiming).responseEnd > 0);
-          }, { timeout: 30000 }),
-          
-          localPage.waitForFunction(() => {
-            return !document.querySelector('*[style*="animation"]');
-          }, { timeout: 15000 }).catch(() => {
-            console.log('Animation timeout, continuing anyway...');
-          }),
-          
-          localPage.waitForFunction(() => {
-            return Array.from(document.images).every(img => img.complete);
-          }, { timeout: 30000 }).catch(() => {
-            console.log('Image load timeout, continuing anyway...');
-          })
-        ]);
-      } catch (error) {
-        console.log('Page load verification timeout, continuing with accessibility check...');
-      }
+      // Wait for the page to be fully loaded
+      await localPage.waitForFunction(() => {
+        return document.readyState === 'complete';
+      }, { timeout: 10000 });
 
       // Inject axe-core into the local copy
       await localPage.addScriptTag({
@@ -539,10 +547,10 @@ async function runAccessibilityCheckOnLocalCopy(page: Page, tempDir: string, wca
         id: 'axe-core'
       });
 
-      // Wait for axe to be available with timeout
+      // Wait for axe to be available
       await localPage.waitForFunction(() => {
         return typeof window.axe !== 'undefined';
-      }, { timeout: 30000 });
+      }, { timeout: 10000 });
 
       // Configure axe-core
       await localPage.evaluate(() => {
@@ -561,42 +569,30 @@ async function runAccessibilityCheckOnLocalCopy(page: Page, tempDir: string, wca
         });
       });
 
-      // Run the analysis on the local copy with timeout
-      type AxeResults = {
-        violations: any[];
-        passes: any[];
-        incomplete: any[];
-        inapplicable: any[];
-      };
+      // Run the analysis on the local copy
+      const results = await localPage.evaluate(() => {
+        return new Promise<any>((resolve, reject) => {
+          if (!window.axe) {
+            reject(new Error('axe-core not available'));
+            return;
+          }
 
-      const results = await Promise.race<AxeResults>([
-        localPage.evaluate(() => {
-          return new Promise<AxeResults>((resolve, reject) => {
-            if (!window.axe) {
-              reject(new Error('axe-core not available'));
-              return;
-            }
-
-            window.axe.run(document, {
-              resultTypes: ['violations', 'passes', 'incomplete', 'inapplicable'],
-              pingWaitTime: 2000,
-              performanceTimer: true
-            }).then((results: any) => {
-              resolve({
-                violations: results.violations || [],
-                passes: results.passes || [],
-                incomplete: results.incomplete || [],
-                inapplicable: results.inapplicable || []
-              });
-            }).catch((error: Error) => {
-              reject(error);
+          window.axe.run(document, {
+            resultTypes: ['violations', 'passes', 'incomplete', 'inapplicable'],
+            pingWaitTime: 2000,
+            performanceTimer: true
+          }).then((results: any) => {
+            resolve({
+              violations: results.violations || [],
+              passes: results.passes || [],
+              incomplete: results.incomplete || [],
+              inapplicable: results.inapplicable || []
             });
+          }).catch((error: Error) => {
+            reject(error);
           });
-        }),
-        new Promise<AxeResults>((_, reject) => 
-          setTimeout(() => reject(new Error('Accessibility check timeout')), 60000)
-        )
-      ]);
+        });
+      });
 
       // Capture screenshots for violations
       for (const violation of results.violations) {
@@ -604,9 +600,34 @@ async function runAccessibilityCheckOnLocalCopy(page: Page, tempDir: string, wca
           try {
             // Convert target array to CSS selector
             const selector = node.target.join(' > ');
-            const screenshot = await captureElementScreenshot(localPage, selector);
-            if (screenshot) {
-              node.screenshot = screenshot;
+            
+            // Take screenshot without modifying the DOM
+            const element = await localPage.$(selector);
+            if (element) {
+              const box = await element.boundingBox();
+              if (box) {
+                const screenshotDir = path.join(process.cwd(), 'public', 'violation-screenshots');
+                if (!fs.existsSync(screenshotDir)) {
+                  fs.mkdirSync(screenshotDir, { recursive: true });
+                }
+
+                const filename = `${generateSafeFilename(selector)}.png`;
+                const fullPath = path.join(screenshotDir, filename);
+
+                // Add padding around the element
+                const padding = 20;
+                await localPage.screenshot({
+                  path: fullPath,
+                  clip: {
+                    x: Math.max(0, box.x - padding),
+                    y: Math.max(0, box.y - padding),
+                    width: box.width + (padding * 2),
+                    height: box.height + (padding * 2)
+                  }
+                });
+
+                node.screenshot = `/violation-screenshots/${filename}`;
+              }
             }
           } catch (error) {
             console.error('Error capturing violation screenshot:', error);
@@ -774,10 +795,9 @@ async function crawlPage(
       await dialog.dismiss();
     });
 
-    // Set a longer timeout and wait until network is idle
     log(`Navigating to ${url}`);
     const response = await page.goto(url, { 
-      waitUntil: 'domcontentloaded', // Changed from networkidle0 to domcontentloaded
+      waitUntil: 'domcontentloaded',
       timeout
     });
 
@@ -802,33 +822,6 @@ async function crawlPage(
           error: 'Too many requests (429). This website is rate limiting access. Please try again later.'
         };
       }
-      if (status === 304) {
-        await page.close();
-        pageClosed = true;
-        return {
-          url,
-          links: [],
-          error: 'Page not modified (304)'
-        };
-      }
-      if (status === 204 || status === 205) {
-        await page.close();
-        pageClosed = true;
-        return {
-          url,
-          links: [],
-          error: `No content (${status})`
-        };
-      }
-      if (status === 407) {
-        await page.close();
-        pageClosed = true;
-        return {
-          url,
-          links: [],
-          error: 'Proxy authentication required (407)'
-        };
-      }
       if (status >= 400) {
         await page.close();
         pageClosed = true;
@@ -840,49 +833,21 @@ async function crawlPage(
       }
     }
 
-    // Check for common anti-bot measures
-    const isBlocked = await page.evaluate(() => {
-      // Check for common anti-bot elements
-      const hasCaptcha = document.querySelector('form[action*="captcha"]') !== null;
-      const hasCloudflare = document.querySelector('#cf-please-wait') !== null;
-      const hasBotDetection = document.querySelector('form[action*="bot"]') !== null;
-      
-      return hasCaptcha || hasCloudflare || hasBotDetection;
-    });
-
-    if (isBlocked) {
-      await page.close();
-      pageClosed = true;
-      return {
-        url,
-        links: [],
-        error: 'This website has detected automated access and is blocking the crawler. Please use their official API or contact them for access.'
-      };
-    }
-
-    // Wait for the page to be fully loaded
+    // Wait for the page to be fully loaded with a shorter timeout
     try {
       await Promise.race([
         page.waitForFunction(() => {
           return document.readyState === 'complete';
-        }, { timeout: 30000 }), // Increased from 5000ms to 30000ms
+        }, { timeout: 15000 }), // Reduced from 30000 to 15000
         new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Page load timeout')), 30000)
+          setTimeout(() => reject(new Error('Page load timeout')), 15000)
         )
       ]);
     } catch (error) {
       console.log(`Page load timeout for ${url}, continuing anyway...`);
-      // Continue execution even if timeout occurs
     }
 
-    // Wait for any dynamic content to load with increased timeout
-    try {
-      await page.waitForTimeout(5000); // Increased from 2000ms to 5000ms
-    } catch (error) {
-      console.log(`Dynamic content load timeout for ${url}, continuing anyway...`);
-      // Continue execution even if timeout occurs
-    }
-
+    // Take screenshot if requested
     let screenshotPath: string | undefined;
     if (takeScreenshots) {
       const screenshotDir = path.join(process.cwd(), 'public', 'screenshots');
@@ -901,6 +866,7 @@ async function crawlPage(
       }
     }
     
+    // Collect links if requested
     let links: string[] = [];
     if (collectLinks) {
       links = await page.evaluate(() => {
@@ -927,16 +893,28 @@ async function crawlPage(
       links = Array.from(newLinks);
     }
 
+    // Run accessibility check if requested
     let accessibilityResults: CrawlResult['accessibilityResults'] | undefined;
     if (checkAccessibility && !pageClosed) {
       try {
+        log(`Starting accessibility check for ${url}`);
+        const startTime = Date.now();
+        
         // Create temp directory for accessibility check
         const tempDir = path.join(process.cwd(), 'temp', crypto.randomBytes(16).toString('hex'));
         fs.mkdirSync(tempDir, { recursive: true });
         
         try {
-          // Run accessibility check on the local copy
-          accessibilityResults = await runAccessibilityCheckOnLocalCopy(page, tempDir, wcagLevels);
+          // Run accessibility check on the local copy with a shorter timeout
+          accessibilityResults = await Promise.race([
+            runAccessibilityCheckOnLocalCopy(page, tempDir, wcagLevels),
+            new Promise<CrawlResult['accessibilityResults']>((_, reject) => 
+              setTimeout(() => reject(new Error('Accessibility check timeout')), 120000) // 2 minute timeout
+            )
+          ]);
+          
+          const endTime = Date.now();
+          log(`Accessibility check completed for ${url} in ${(endTime - startTime) / 1000} seconds`);
         } finally {
           // Clean up the temporary directory
           await cleanupTempDir(tempDir);
@@ -1079,6 +1057,12 @@ export async function POST(request: Request) {
         await cleanupScreenshots();
       }
       
+      // Clean up violation screenshots if accessibility check is enabled
+      if (checkAccessibility) {
+        log('Cleaning up old violation screenshots');
+        await cleanupViolationScreenshots();
+      }
+      
       // Always clean up temp directory at the start of a new scan
       log('Cleaning up temp directory');
       await cleanupTempDir();
@@ -1114,11 +1098,10 @@ export async function POST(request: Request) {
                     if (visited.has(urlToCrawl)) return null;
                     
                     try {
-                      // Add individual page timeout
                       return await Promise.race([
                         crawlPage(urlToCrawl, takeScreenshots, visited, baseUrl, true, checkAccessibility, wcagLevels, increaseTimeout, slowRateLimit),
                         new Promise<CrawlResult>((_, reject) => 
-                          setTimeout(() => reject(new Error('Page crawl timeout')), 180000) // 3 minute timeout per page
+                          setTimeout(() => reject(new Error('Page crawl timeout')), 180000) // Back to 3 minute timeout
                         )
                       ]);
                     } catch (error) {
@@ -1132,7 +1115,7 @@ export async function POST(request: Request) {
                   })
                 ),
                 new Promise<Array<CrawlResult | null>>((_, reject) => 
-                  setTimeout(() => reject(new Error('Batch processing timeout')), 300000) // 5 minute timeout for entire batch
+                  setTimeout(() => reject(new Error('Batch processing timeout')), 300000) // Back to 5 minute timeout
                 )
               ]);
               
@@ -1184,7 +1167,7 @@ export async function POST(request: Request) {
                             return await Promise.race([
                               crawlPage(link, takeScreenshots, visited, baseUrl, true, checkAccessibility, wcagLevels, increaseTimeout, slowRateLimit),
                               new Promise<CrawlResult>((_, reject) => 
-                                setTimeout(() => reject(new Error('Page crawl timeout')), 180000) // 3 minute timeout per page
+                                setTimeout(() => reject(new Error('Page crawl timeout')), 180000) // Back to 3 minute timeout
                               )
                             ]);
                           } catch (error) {
@@ -1198,7 +1181,7 @@ export async function POST(request: Request) {
                         })
                       ),
                       new Promise<CrawlResult[]>((_, reject) => 
-                        setTimeout(() => reject(new Error('New batch processing timeout')), 300000) // 5 minute timeout for entire batch
+                        setTimeout(() => reject(new Error('New batch processing timeout')), 300000) // Back to 5 minute timeout
                       )
                     ]);
                     

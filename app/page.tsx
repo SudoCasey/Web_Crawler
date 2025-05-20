@@ -813,7 +813,7 @@ export default function Home() {
   const totalPages = Math.ceil(scanResultArray.length / resultsPerPage);
 
   const OptionsRow = useMemo(() => (
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 4, mb: 2 }}>
+    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-around', gap: 4, mb: 2 }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
         <Typography variant="body1" sx={{ whiteSpace: 'nowrap' }}>
           Screenshots:
@@ -863,9 +863,17 @@ export default function Home() {
           </ToggleButton>
         </ToggleButtonGroup>
       </Box>
+    </Box>
+  ), [takeScreenshots, crawlEntireWebsite, wcagLevel, handleScreenshotsChange, handleFullCrawlChange, handleWcagLevelChange]);
 
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-        <Typography variant="body1" sx={{ whiteSpace: 'nowrap' }}>
+  const AdvancedSettings = useMemo(() => (
+    <Box sx={{ width: 300, p: 3 }}>
+      <Typography variant="h6" gutterBottom>
+        Advanced Settings
+      </Typography>
+      
+      <Box sx={{ mb: 3 }}>
+        <Typography variant="subtitle1" gutterBottom>
           Concurrent Pages:
         </Typography>
         <ToggleButtonGroup
@@ -874,6 +882,7 @@ export default function Home() {
           onChange={handleConcurrentPagesChange}
           aria-label="Number of concurrent pages to crawl"
           size="small"
+          fullWidth
         >
           {[1, 2, 3, 4, 5].map((num) => (
             <ToggleButton key={num} value={num} aria-label={`${num} concurrent pages`}>
@@ -882,15 +891,7 @@ export default function Home() {
           ))}
         </ToggleButtonGroup>
       </Box>
-    </Box>
-  ), [takeScreenshots, crawlEntireWebsite, wcagLevel, concurrentPages, handleScreenshotsChange, handleFullCrawlChange, handleWcagLevelChange, handleConcurrentPagesChange]);
 
-  const AdvancedSettings = useMemo(() => (
-    <Box sx={{ width: 300, p: 3 }}>
-      <Typography variant="h6" gutterBottom>
-        Advanced Settings
-      </Typography>
-      
       <FormControlLabel
         control={
           <Checkbox
@@ -924,7 +925,7 @@ export default function Home() {
         sx={{ mb: 1 }}
       />
     </Box>
-  ), [showLinkDiscovery, increaseTimeout, slowRateLimit, handleShowLinkDiscoveryChange, handleIncreaseTimeoutChange, handleSlowRateLimitChange]);
+  ), [showLinkDiscovery, increaseTimeout, slowRateLimit, concurrentPages, handleShowLinkDiscoveryChange, handleIncreaseTimeoutChange, handleSlowRateLimitChange, handleConcurrentPagesChange]);
 
   const getUniqueLinks = (links: string[]): string[] => {
     return Array.from(new Set(links));
